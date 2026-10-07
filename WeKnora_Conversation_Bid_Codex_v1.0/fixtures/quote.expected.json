@@ -1,0 +1,21 @@
+{
+  "currency": "CNY",
+  "rounding": "ROUND_HALF_UP",
+  "scale": 2,
+  "tax_rate": "0.06",
+  "lines": [
+    {
+      "qty": "3",
+      "unit_price": "19.995",
+      "net": "59.99"
+    },
+    {
+      "qty": "2",
+      "unit_price": "10.005",
+      "net": "20.01"
+    }
+  ],
+  "net_total": "80.00",
+  "tax_total": "4.80",
+  "gross_total": "84.80"
+}

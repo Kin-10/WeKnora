@@ -439,6 +439,17 @@
                     <t-icon name="info-circle" />
                   </t-button>
                 </t-tooltip>
+                <t-button v-if="canContinue && event === activeAnswerEventRef" size="small" variant="outline" shape="round" class="answer-toolbar__continue"
+                  @click.stop="emitContinue" :title="t('chat.continueAnswer')">
+                  <t-icon name="play-circle" />{{ t('chat.continueAnswer') }}
+                </t-button>
+                <t-button v-if="(canGenerateDocument || documentGenerating) && event === activeAnswerEventRef" size="small"
+                  variant="outline" shape="round" class="answer-toolbar__document"
+                  :loading="documentGenerating" :disabled="documentGenerating"
+                  @click.stop="emitGenerateDocument" :title="t('chat.generateWordHint')">
+                  <t-icon v-if="!documentGenerating" name="file-word" />{{ t('chat.generateWord') }}
+                </t-button>
+                <DocumentFormattingNotice v-if="event === activeAnswerEventRef" :value="session?.document_formatting" />
                 <ChatRequestInfoButton v-if="showRequestInfo && isConversationDone" :session="session"
                   :session-id="sessionId" />
                 <transition name="follow-up-toolbar-loading">
@@ -641,6 +652,7 @@ import ChatRequestInfoButton from '@/components/ChatRequestInfoButton.vue';
 import ChatCitationFloat from '@/components/ChatCitationFloat.vue';
 import picturePreview from '@/components/picture-preview.vue';
 import ChatArtifactsDrawer from './ChatArtifactsDrawer.vue';
+import DocumentFormattingNotice from './DocumentFormattingNotice.vue';
 import { isCollectingSkillArtifacts } from '@/utils/skillArtifacts';
 import { useArtifactArriveMotion } from '@/composables/useArtifactArriveMotion';
 import { useChatSandboxPanel } from '@/composables/useChatSandboxPanel';
@@ -994,16 +1006,34 @@ const props = defineProps<{
   followUpLoading?: boolean;
   canFork?: boolean;
   canRewind?: boolean;
+  canContinue?: boolean;
+  canGenerateDocument?: boolean;
+  documentGenerating?: boolean;
 }>();
 
 const emit = defineEmits<{
   (event: 'render-complete-change', ready: boolean): void;
   (event: 'fork', messageId: string): void;
   (event: 'rewind', messageId: string): void;
+  (event: 'continue', messageId: string): void;
+  (event: 'generate-document', messageId: string): void;
 }>();
 
 const canFork = computed(() => props.canFork === true && !props.embeddedMode)
 const canRewind = computed(() => props.canRewind === true && !props.embeddedMode)
+const canContinue = computed(() => props.canContinue === true && !props.embeddedMode)
+const canGenerateDocument = computed(() => props.canGenerateDocument === true && !props.embeddedMode)
+const emitGenerateDocument = () => {
+  if (!canGenerateDocument.value || props.documentGenerating || !answerFullyRendered.value
+      || props.session?.persistence_error) return;
+  const messageId = persistedAssistantId(props.session) || String(props.session?.id || '');
+  if (messageId) emit('generate-document', messageId);
+};
+const emitContinue = () => {
+  if (!canContinue.value || !answerFullyRendered.value || props.session?.persistence_error) return;
+  const messageId = persistedAssistantId(props.session) || String(props.session?.id || '');
+  if (messageId) emit('continue', messageId);
+};
 const forkTooltip = '从这条回答继续分叉'
 const rewindTooltip = computed(() => t('chat.rewind.tooltip'))
 const emitFork = () => {
@@ -3145,6 +3175,22 @@ const handleAddToKnowledge = (answerEvent: any) => {
 @import '../../../components/css/chat-message-shared.less';
 @import '../../../components/css/chat-citations.less';
 @import '../../../components/css/chat-timeline-loading.less';
+
+.answer-toolbar { flex-wrap: wrap; }
+
+.answer-toolbar :deep(.t-button.answer-toolbar__continue),
+.answer-toolbar :deep(.t-button.answer-toolbar__document) {
+  width: auto;
+  min-width: auto;
+  flex: none;
+  padding: 0 8px;
+  white-space: nowrap;
+
+  .t-button__content,
+  .t-button__text {
+    gap: 6px;
+  }
+}
 
 .agent-stream-display {
   display: flex;

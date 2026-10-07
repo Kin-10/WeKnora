@@ -1,0 +1,82 @@
+{
+  "schema_version": "1.0",
+  "card_id": "card_lots",
+  "card_type": "lot_selection",
+  "project_id": "project_demo",
+  "entity_type": "analysis",
+  "entity_id": "analysis_1",
+  "revision": 1,
+  "status": "waiting_input",
+  "allowed_actions": [
+    "edit_lots",
+    "confirm_selection"
+  ],
+  "payload": {
+    "lots": [
+      {
+        "id": "lot_1",
+        "code": "包一",
+        "name": "设备",
+        "aliases": [
+          "第一包"
+        ],
+        "sources": [
+          {
+            "locator": {
+              "file_id": "file_tender",
+              "file_version": 1,
+              "block_id": "b02",
+              "page_index": null,
+              "paragraph_index": 1
+            },
+            "quote": "本项目分三个采购包：包一设备、包二耗材、包三培训服务。第二章为投标须知，并非第二个采购包。允许兼投，各包分别编制投标文件。"
+          }
+        ],
+        "needs_confirmation": false
+      },
+      {
+        "id": "lot_2",
+        "code": "包二",
+        "name": "耗材",
+        "aliases": [
+          "第二包"
+        ],
+        "sources": [
+          {
+            "locator": {
+              "file_id": "file_tender",
+              "file_version": 1,
+              "block_id": "b02",
+              "page_index": null,
+              "paragraph_index": 1
+            },
+            "quote": "本项目分三个采购包：包一设备、包二耗材、包三培训服务。第二章为投标须知，并非第二个采购包。允许兼投，各包分别编制投标文件。"
+          }
+        ],
+        "needs_confirmation": false
+      },
+      {
+        "id": "lot_3",
+        "code": "包三",
+        "name": "培训服务",
+        "aliases": [
+          "第三包"
+        ],
+        "sources": [
+          {
+            "locator": {
+              "file_id": "file_tender",
+              "file_version": 1,
+              "block_id": "b02",
+              "page_index": null,
+              "paragraph_index": 1
+            },
+            "quote": "本项目分三个采购包：包一设备、包二耗材、包三培训服务。第二章为投标须知，并非第二个采购包。允许兼投，各包分别编制投标文件。"
+          }
+        ],
+        "needs_confirmation": false
+      }
+    ],
+    "selected_lot_ids": []
+  }
+}

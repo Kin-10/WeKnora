@@ -1,0 +1,31 @@
+{
+  "requirements": [
+    {
+      "key": "delivery_days",
+      "lot_id": "lot_1",
+      "operator": "<=",
+      "value": "15"
+    },
+    {
+      "key": "warranty_years",
+      "lot_id": "lot_1",
+      "operator": ">=",
+      "value": "3"
+    }
+  ],
+  "historical_facts": [
+    {
+      "key": "delivery_days",
+      "value": "30"
+    },
+    {
+      "key": "warranty_years",
+      "value": "2"
+    }
+  ],
+  "expected": [
+    "fact_conflict",
+    "fact_conflict"
+  ],
+  "confirmed_fact_version_id": null
+}

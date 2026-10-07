@@ -1,0 +1,50 @@
+[
+  {
+    "id": "N01",
+    "fixture": "analysis.valid.json",
+    "mutation": "explicit requirement has unknown lot_id",
+    "expected": "INVALID_SCOPE"
+  },
+  {
+    "id": "N02",
+    "fixture": "analysis.valid.json",
+    "mutation": "source quote not in source block",
+    "expected": "INVALID_SOURCE"
+  },
+  {
+    "id": "N03",
+    "fixture": "document.valid.json",
+    "mutation": "apply candidate after content_revision changes",
+    "expected": "REVISION_CONFLICT"
+  },
+  {
+    "id": "N04",
+    "fixture": "card.valid.json",
+    "mutation": "confirm with obsolete analysis revision",
+    "expected": "STALE_INPUT"
+  },
+  {
+    "id": "N05",
+    "fixture": "events.valid.json",
+    "mutation": "replay seq 2 after seq 3",
+    "expected": "IGNORE_OLD_EVENT"
+  },
+  {
+    "id": "N06",
+    "fixture": "materials.json",
+    "mutation": "export material with no original bytes",
+    "expected": "FINALIZATION_BLOCKED"
+  },
+  {
+    "id": "N07",
+    "fixture": "selection.expected.json",
+    "mutation": "lot_id belongs to other project",
+    "expected": "INVALID_SCOPE"
+  },
+  {
+    "id": "N08",
+    "fixture": "quote.expected.json",
+    "mutation": "binary float or wrong rounding at total",
+    "expected": "COMPUTATION_MISMATCH"
+  }
+]

@@ -4,6 +4,7 @@ import { useI18n } from 'vue-i18n'
 import { ensureRagPipelineHistoryStream } from '@/utils/rag-pipeline-history'
 import { applyMessageCreatedAt, bindServerTurnTimestamps, ensureMessageCreatedAt } from '@/utils/messageTimestamp'
 import { expandSteerForksInHistory, forkAfterInjectedUser, steerStepEvents, resetSteerTurnForReplay } from '@/utils/steerStreamFork'
+import { readDocumentFormatting } from '@/utils/documentFormatting'
 
 export type ChatMessage = Record<string, unknown>
 
@@ -540,6 +541,7 @@ export function useChatStreamHandler(options: UseChatStreamHandlerOptions) {
         message.knowledge_references = payload.knowledge_references
       }
       if (payload.is_fallback) message.is_fallback = true
+      if (payload.truncated) message.truncated = true
       if (payload.is_completed) message.is_completed = true
       emitMessageUpdated(message, payload)
     } else {
@@ -1024,6 +1026,8 @@ export function useChatStreamHandler(options: UseChatStreamHandlerOptions) {
         if (dataId) replaySegments.delete(dataId)
         log('[Agent] Complete event received')
         applyFinalArtifactContent(message, (dataPayload as any)?.final_content)
+        const documentFormatting = readDocumentFormatting(dataPayload?.document_formatting)
+        if (documentFormatting) message.document_formatting = documentFormatting
         loading.value = false
         isReplying.value = false
         message.is_completed = true
@@ -1254,6 +1258,8 @@ export function useChatStreamHandler(options: UseChatStreamHandlerOptions) {
       if (existingMessage.is_completed) return
       const metadata = data.data as ChatMessage | undefined
       applyFinalArtifactContent(existingMessage, metadata?.final_content)
+      const documentFormatting = readDocumentFormatting(metadata?.document_formatting)
+      if (documentFormatting) existingMessage.document_formatting = documentFormatting
       if (Array.isArray(metadata?.artifacts)) existingMessage.artifacts = metadata.artifacts
       const usage = metadata?.usage || data.usage
       if (usage) existingMessage.usage = usage
@@ -1285,6 +1291,7 @@ export function useChatStreamHandler(options: UseChatStreamHandlerOptions) {
     }
 
     if ((data.data as ChatMessage | undefined)?.is_fallback) obj.is_fallback = true
+    if ((data.data as ChatMessage | undefined)?.truncated) obj.truncated = true
 
     const thinkCloseTag = '</think>'
     if (fullContent.value.includes('<think>') && !fullContent.value.includes(thinkCloseTag)) {

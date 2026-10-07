@@ -1,0 +1,366 @@
+{
+  "type": "object",
+  "properties": {
+    "schema_version": {
+      "const": "1.0"
+    },
+    "section_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "lot_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "content_revision": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "nodes": {
+      "type": "array",
+      "items": {
+        "oneOf": [
+          {
+            "type": "object",
+            "properties": {
+              "type": {
+                "const": "heading"
+              },
+              "id": {
+                "type": "string",
+                "minLength": 1
+              },
+              "level": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 6
+              },
+              "text": {
+                "type": "string"
+              },
+              "requirement_ids": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              }
+            },
+            "required": [
+              "type",
+              "id",
+              "level",
+              "text",
+              "requirement_ids"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "type": {
+                "const": "paragraph"
+              },
+              "id": {
+                "type": "string",
+                "minLength": 1
+              },
+              "runs": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "text": {
+                      "type": "string"
+                    },
+                    "marks": {
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "enum": [
+                          "bold",
+                          "italic",
+                          "underline"
+                        ]
+                      }
+                    }
+                  },
+                  "required": [
+                    "text"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "requirement_ids": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              }
+            },
+            "required": [
+              "type",
+              "id",
+              "runs",
+              "requirement_ids"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "type": {
+                "const": "table"
+              },
+              "id": {
+                "type": "string",
+                "minLength": 1
+              },
+              "header": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "rows": {
+                "type": "array",
+                "items": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "text": {
+                        "type": "string"
+                      },
+                      "row_span": {
+                        "type": "integer",
+                        "minimum": 1
+                      },
+                      "col_span": {
+                        "type": "integer",
+                        "minimum": 1
+                      }
+                    },
+                    "required": [
+                      "text"
+                    ],
+                    "additionalProperties": false
+                  }
+                }
+              },
+              "requirement_ids": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              }
+            },
+            "required": [
+              "type",
+              "id",
+              "header",
+              "rows",
+              "requirement_ids"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "type": {
+                "const": "image"
+              },
+              "id": {
+                "type": "string",
+                "minLength": 1
+              },
+              "asset_id": {
+                "type": "string",
+                "minLength": 1
+              },
+              "alt": {
+                "type": "string"
+              },
+              "caption": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "width_mm": {
+                "type": "number",
+                "exclusiveMinimum": 0
+              },
+              "requirement_ids": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              }
+            },
+            "required": [
+              "type",
+              "id",
+              "asset_id",
+              "alt",
+              "caption",
+              "width_mm",
+              "requirement_ids"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "type": {
+                "const": "attachment_ref"
+              },
+              "id": {
+                "type": "string",
+                "minLength": 1
+              },
+              "material_id": {
+                "type": "string",
+                "minLength": 1
+              },
+              "material_version": {
+                "type": "integer",
+                "minimum": 1
+              },
+              "page_selection": {
+                "anyOf": [
+                  {
+                    "const": "all"
+                  },
+                  {
+                    "type": "array",
+                    "items": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "minItems": 1,
+                    "uniqueItems": true
+                  }
+                ]
+              },
+              "requirement_ids": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              }
+            },
+            "required": [
+              "type",
+              "id",
+              "material_id",
+              "material_version",
+              "page_selection",
+              "requirement_ids"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "type": {
+                "const": "page_break"
+              },
+              "id": {
+                "type": "string",
+                "minLength": 1
+              }
+            },
+            "required": [
+              "type",
+              "id"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "type": {
+                "const": "field"
+              },
+              "id": {
+                "type": "string",
+                "minLength": 1
+              },
+              "field_kind": {
+                "type": "string",
+                "enum": [
+                  "toc",
+                  "page",
+                  "cross_reference",
+                  "fact"
+                ]
+              },
+              "ref_key": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            },
+            "required": [
+              "type",
+              "id",
+              "field_kind",
+              "ref_key"
+            ],
+            "additionalProperties": false
+          }
+        ]
+      }
+    },
+    "internal": {
+      "type": "object",
+      "properties": {
+        "fact_version_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "requirement_revision": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "source_binding_ids": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "gaps": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "required": [
+        "fact_version_id",
+        "requirement_revision",
+        "source_binding_ids",
+        "gaps"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "required": [
+    "schema_version",
+    "section_id",
+    "lot_id",
+    "content_revision",
+    "nodes",
+    "internal"
+  ],
+  "additionalProperties": false,
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "标书章节AST；internal字段不直接输出正式文件"
+}

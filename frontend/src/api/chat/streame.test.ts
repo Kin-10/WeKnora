@@ -80,3 +80,20 @@ for (const selected of [true, false, undefined]) {
     } finally { stream.stopStream() }
   })
 }
+
+for (const continuation of [undefined, 'persisted-answer']) {
+  test(`SSE HTTP body preserves explicit continuation ownership: ${continuation}`, async () => {
+    let stream!: ReturnType<typeof useStream>
+    await renderToString(createSSRApp({ setup() { stream = useStream(); return () => null } }))
+    try {
+      await stream.startStream({
+        session_id: 'session', query: '继续', method: 'POST', url: '/api/v1/knowledge-chat',
+        continuation_of_message_id: continuation,
+      })
+      const body = JSON.parse(transport.requests.at(-1)!.options.body)
+      assert.equal(body.continuation_of_message_id, continuation)
+      assert.equal(Object.hasOwn(body, 'continuation_of_message_id'), !!continuation)
+      assert.equal(stream.lastStreamRequest.value?.body?.continuation_of_message_id, continuation)
+    } finally { stream.stopStream() }
+  })
+}

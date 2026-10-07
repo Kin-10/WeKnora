@@ -1,0 +1,13 @@
+# 契约使用说明
+
+所有bid接口均为拟新增API。openapi.json为OpenAPI 3.1；其余schema使用JSON Schema 2020-12。数据返回按直接对象描述，若宿主强制success/data信封，P00在适配层统一包装并同步契约，不能前后端各写一套。
+
+schema管结构，业务不变量仍需服务端验证：同租户/同项目、explicit要求至少一个有效lot、unresolved不能确认、确认必须当前版本、decimal字符串必须符合精度、lot事实须lot_id且shared须null、page selection不得超原文件范围、header行与table行列需一致、fixed模板字段白名单。
+
+card.payload和event.payload是扩展信封；按card_type或event_type引用对应API资源，禁止生产中任意反序列化成可执行动作。analysis-corrections.value为受控字段补丁：每个target_type允许哪些field及value类型须由服务端白名单定义；不能改id、tenant、confirmed_by或来源文件所有权。
+
+事实PUT仅创建candidate/conflict/missing草稿。GET facts返回当前草稿；GET fact-versions/{fact_version_id}返回不可变确认版，须重新授权。confirmed只能由确认服务产生。Material的approved与ExportPlan的confirmed为服务端受保护字段；普通编辑不得自行提交改变，由有权确认操作写入。客户端提交旧值可用于完整对象保存，服务端仍应拒绝未经授权的状态变更。
+
+final导出需reviewed_snapshot_id指向已进行内容及版式复核的相同内容快照；若打包变化导致内容/版式变化，必须重新验证并复核，不允许一个接口参数绕过门槛。导出草稿审阅版式可以同一内容快照复用渲染结果，但正式包装需实际再检查。
+
+JobAccepted兼容立即完成或取消的现有幂等结果；HTTP202只表示命令已接受，具体任务状态以body和后续GET为准。createProject重放可以返回原Project，HTTP状态统一按契约保持201，前端不得据此假定创建了第二个项目。

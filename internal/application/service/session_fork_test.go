@@ -555,6 +555,79 @@ func TestCopyMessagesIntoRemapsRequestIDsPerTurn(t *testing.T) {
 	require.NotEqual(t, "u1", copies[0].ID)
 }
 
+func TestForkRemapsDocumentContinuationChainAndKeepsIntent(t *testing.T) {
+	first := checkpointedTurn("request", "first", "sbx", "sha1", 0)
+	second := checkpointedTurn("continue-1", "second", "sbx", "sha2", 10*time.Second)
+	third := checkpointedTurn("continue-2", "third", "sbx", "sha3", 20*time.Second)
+	first[0].Content = "写一份标书"
+	second[0].Content, third[0].Content = "继续", "继续生成"
+	for _, turn := range [][]*types.Message{first, second, third} {
+		turn[1].IsCompleted = true
+		turn[1].Content = "正文"
+		turn[1].ExecutionContext.DocumentRequested = true
+	}
+	second[1].ExecutionContext.ContinuationOfMessageID = "first"
+	third[1].ExecutionContext.ContinuationOfMessageID = "second"
+	history := append(append(first, second...), third...)
+	svc, sessions, _ := newForkFixture(t, nil, history)
+
+	result, err := svc.Fork(context.Background(), 1, "u1", "src", "third", "标书分支")
+
+	require.NoError(t, err)
+	require.Len(t, sessions.copiedMessages, 6)
+	copiedFirst, copiedSecond, copiedThird := sessions.copiedMessages[1], sessions.copiedMessages[3], sessions.copiedMessages[5]
+	require.Empty(t, copiedFirst.ExecutionContext.ContinuationOfMessageID)
+	require.Equal(t, copiedFirst.ID, copiedSecond.ExecutionContext.ContinuationOfMessageID)
+	require.Equal(t, copiedSecond.ID, copiedThird.ExecutionContext.ContinuationOfMessageID)
+	for _, message := range []*types.Message{copiedFirst, copiedSecond, copiedThird} {
+		require.Equal(t, result.SessionID, message.SessionID)
+		require.True(t, message.ExecutionContext.DocumentRequested)
+	}
+	// A branch must not rewrite the parent's existing chain.
+	require.Equal(t, "first", second[1].ExecutionContext.ContinuationOfMessageID)
+	require.Equal(t, "second", third[1].ExecutionContext.ContinuationOfMessageID)
+}
+
+func TestCopyMessagesIntoDoesNotRebindInvalidDocumentParents(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		mutate func([]*types.Message)
+	}{
+		{"missing ancestor", func(m []*types.Message) { m[2].ExecutionContext.ContinuationOfMessageID = "missing" }},
+		{"another source session", func(m []*types.Message) { m[0].SessionID = "another-session" }},
+		{"future ancestor", func(m []*types.Message) {
+			m[0].ExecutionContext.ContinuationOfMessageID = "child"
+			m[2].ExecutionContext.ContinuationOfMessageID = ""
+		}},
+		{"self cycle", func(m []*types.Message) { m[2].ExecutionContext.ContinuationOfMessageID = "child" }},
+		{"incomplete ancestor", func(m []*types.Message) { m[0].IsCompleted = false }},
+		{"nonassistant ancestor", func(m []*types.Message) { m[0].Role = "user" }},
+		{"unknown source session", func(m []*types.Message) { m[0].SessionID, m[2].SessionID = "", "" }},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			history := []*types.Message{
+				{ID: "root", SessionID: "source", Role: "assistant", IsCompleted: true, Content: "第一章"},
+				{ID: "continue", SessionID: "source", Role: "user", Content: "继续"},
+				{ID: "child", SessionID: "source", Role: "assistant", IsCompleted: true, Content: "第二章",
+					ExecutionContext: types.MessageExecutionContext{ContinuationOfMessageID: "root", DocumentRequested: true}},
+			}
+			tc.mutate(history)
+			copies := copyMessagesInto("fork", history)
+			for i, original := range history {
+				if parentID := original.ExecutionContext.ContinuationOfMessageID; parentID != "" {
+					require.Equal(t, parentID, copies[i].ExecutionContext.ContinuationOfMessageID,
+						"an invalid explicit edge must not become a different or inferred ancestor")
+					for _, candidate := range copies {
+						require.NotEqual(t, parentID, candidate.ID,
+							"unresolvable edge remains invalid within the branch history")
+					}
+				}
+			}
+			require.True(t, copies[2].ExecutionContext.DocumentRequested)
+		})
+	}
+}
+
 func TestForkCopiesArtifactsAndAttachmentsOntoNewSession(t *testing.T) {
 	turn := checkpointedTurn("u-msg-1", "a-msg-1", "sbx-1", "sha1", 0)
 	turn[0].Attachments = types.MessageAttachments{{

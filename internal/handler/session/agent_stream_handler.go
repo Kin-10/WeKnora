@@ -933,6 +933,14 @@ func (h *AgentStreamHandler) publishCompletion(ctx context.Context) error {
 	if h.completionEvent == nil {
 		return nil
 	}
+	// Automatic Word export can attach a derived file after handleComplete,
+	// but before the final message write. Publish the persisted artifact list.
+	if h.assistantMessage != nil && len(h.assistantMessage.Artifacts) > 0 {
+		h.completionEvent.Data["artifacts"] = publicArtifactViews(h.assistantMessage.Artifacts)
+	}
+	if h.assistantMessage != nil && h.assistantMessage.DocumentFormatting != nil {
+		h.completionEvent.Data["document_formatting"] = h.assistantMessage.DocumentFormatting
+	}
 	if err := h.streamManager.AppendEvent(ctx, h.sessionID, h.assistantMessageID, *h.completionEvent); err != nil {
 		return err
 	}

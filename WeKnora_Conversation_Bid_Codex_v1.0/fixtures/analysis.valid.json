@@ -1,0 +1,420 @@
+{
+  "schema_version": "1.0",
+  "analysis_id": "analysis_1",
+  "document_set_id": "ds_1",
+  "status": "ready",
+  "revision": 1,
+  "project_candidates": {
+    "title": "合成采购演示",
+    "project_code": "DEMO-2026-001",
+    "buyer": null
+  },
+  "coverage_units": [
+    {
+      "unit_id": "u_b01",
+      "file_id": "file_tender",
+      "kind": "block_range",
+      "range_label": "b01",
+      "status": "parsed",
+      "reason": null
+    },
+    {
+      "unit_id": "u_b02",
+      "file_id": "file_tender",
+      "kind": "block_range",
+      "range_label": "b02",
+      "status": "parsed",
+      "reason": null
+    },
+    {
+      "unit_id": "u_b03",
+      "file_id": "file_tender",
+      "kind": "block_range",
+      "range_label": "b03",
+      "status": "parsed",
+      "reason": null
+    },
+    {
+      "unit_id": "u_b04",
+      "file_id": "file_tender",
+      "kind": "block_range",
+      "range_label": "b04",
+      "status": "parsed",
+      "reason": null
+    },
+    {
+      "unit_id": "u_b05",
+      "file_id": "file_tender",
+      "kind": "block_range",
+      "range_label": "b05",
+      "status": "parsed",
+      "reason": null
+    },
+    {
+      "unit_id": "u_b06",
+      "file_id": "file_tender",
+      "kind": "block_range",
+      "range_label": "b06",
+      "status": "parsed",
+      "reason": null
+    },
+    {
+      "unit_id": "u_b07",
+      "file_id": "file_tender",
+      "kind": "block_range",
+      "range_label": "b07",
+      "status": "parsed",
+      "reason": null
+    },
+    {
+      "unit_id": "u_b08",
+      "file_id": "file_tender",
+      "kind": "block_range",
+      "range_label": "b08",
+      "status": "parsed",
+      "reason": null
+    },
+    {
+      "unit_id": "u_b09",
+      "file_id": "file_tender",
+      "kind": "block_range",
+      "range_label": "b09",
+      "status": "parsed",
+      "reason": null
+    },
+    {
+      "unit_id": "u_b10",
+      "file_id": "file_tender",
+      "kind": "block_range",
+      "range_label": "b10",
+      "status": "parsed",
+      "reason": null
+    },
+    {
+      "unit_id": "u_b11",
+      "file_id": "file_tender",
+      "kind": "block_range",
+      "range_label": "b11",
+      "status": "parsed",
+      "reason": null
+    },
+    {
+      "unit_id": "u_b12",
+      "file_id": "file_tender",
+      "kind": "block_range",
+      "range_label": "b12",
+      "status": "parsed",
+      "reason": null
+    }
+  ],
+  "lots": [
+    {
+      "id": "lot_1",
+      "code": "包一",
+      "name": "设备",
+      "aliases": [
+        "第一包"
+      ],
+      "sources": [
+        {
+          "locator": {
+            "file_id": "file_tender",
+            "file_version": 1,
+            "block_id": "b02",
+            "page_index": null,
+            "paragraph_index": 1
+          },
+          "quote": "本项目分三个采购包：包一设备、包二耗材、包三培训服务。第二章为投标须知，并非第二个采购包。允许兼投，各包分别编制投标文件。"
+        }
+      ],
+      "needs_confirmation": false
+    },
+    {
+      "id": "lot_2",
+      "code": "包二",
+      "name": "耗材",
+      "aliases": [
+        "第二包"
+      ],
+      "sources": [
+        {
+          "locator": {
+            "file_id": "file_tender",
+            "file_version": 1,
+            "block_id": "b02",
+            "page_index": null,
+            "paragraph_index": 1
+          },
+          "quote": "本项目分三个采购包：包一设备、包二耗材、包三培训服务。第二章为投标须知，并非第二个采购包。允许兼投，各包分别编制投标文件。"
+        }
+      ],
+      "needs_confirmation": false
+    },
+    {
+      "id": "lot_3",
+      "code": "包三",
+      "name": "培训服务",
+      "aliases": [
+        "第三包"
+      ],
+      "sources": [
+        {
+          "locator": {
+            "file_id": "file_tender",
+            "file_version": 1,
+            "block_id": "b02",
+            "page_index": null,
+            "paragraph_index": 1
+          },
+          "quote": "本项目分三个采购包：包一设备、包二耗材、包三培训服务。第二章为投标须知，并非第二个采购包。允许兼投，各包分别编制投标文件。"
+        }
+      ],
+      "needs_confirmation": false
+    }
+  ],
+  "requirements": [
+    {
+      "id": "r_common",
+      "kind": "qualification",
+      "verbatim": "所有采购包均需提供当前有效的营业执照，并提交投标函。投标函使用本文件附表固定格式。",
+      "normalized": "所有采购包均需提供当前有效的营业执照，并提交投标函。投标函使用本文件附表固定格式。",
+      "scope_mode": "all_lots",
+      "lot_ids": [],
+      "mandatory": true,
+      "sources": [
+        {
+          "locator": {
+            "file_id": "file_tender",
+            "file_version": 1,
+            "block_id": "b03",
+            "page_index": null,
+            "paragraph_index": 2
+          },
+          "quote": "所有采购包均需提供当前有效的营业执照，并提交投标函。投标函使用本文件附表固定格式。"
+        }
+      ],
+      "review_status": "candidate"
+    },
+    {
+      "id": "r_lot1",
+      "kind": "technical",
+      "verbatim": "包一采购设备A共2台，最高限价100000元；交付期不超过15天，质保3年。需提供设备A的产品说明书。",
+      "normalized": "包一采购设备A共2台，最高限价100000元；交付期不超过15天，质保3年。需提供设备A的产品说明书。",
+      "scope_mode": "explicit",
+      "lot_ids": [
+        "lot_1"
+      ],
+      "mandatory": true,
+      "sources": [
+        {
+          "locator": {
+            "file_id": "file_tender",
+            "file_version": 1,
+            "block_id": "b04",
+            "page_index": null,
+            "paragraph_index": 3
+          },
+          "quote": "包一采购设备A共2台，最高限价100000元；交付期不超过15天，质保3年。需提供设备A的产品说明书。"
+        }
+      ],
+      "review_status": "candidate"
+    },
+    {
+      "id": "r_lot2",
+      "kind": "technical",
+      "verbatim": "包二采购耗材B共100盒，最高限价20000元；交付期不超过7天，需提供适用于耗材B的检测报告。",
+      "normalized": "包二采购耗材B共100盒，最高限价20000元；交付期不超过7天，需提供适用于耗材B的检测报告。",
+      "scope_mode": "explicit",
+      "lot_ids": [
+        "lot_2"
+      ],
+      "mandatory": true,
+      "sources": [
+        {
+          "locator": {
+            "file_id": "file_tender",
+            "file_version": 1,
+            "block_id": "b05",
+            "page_index": null,
+            "paragraph_index": 4
+          },
+          "quote": "包二采购耗材B共100盒，最高限价20000元；交付期不超过7天，需提供适用于耗材B的检测报告。"
+        }
+      ],
+      "review_status": "candidate"
+    },
+    {
+      "id": "r_lot3",
+      "kind": "technical",
+      "verbatim": "包三采购培训服务2场，最高限价10000元；需提供培训计划和讲师履历。",
+      "normalized": "包三采购培训服务2场，最高限价10000元；需提供培训计划和讲师履历。",
+      "scope_mode": "explicit",
+      "lot_ids": [
+        "lot_3"
+      ],
+      "mandatory": true,
+      "sources": [
+        {
+          "locator": {
+            "file_id": "file_tender",
+            "file_version": 1,
+            "block_id": "b06",
+            "page_index": null,
+            "paragraph_index": 5
+          },
+          "quote": "包三采购培训服务2场，最高限价10000元；需提供培训计划和讲师履历。"
+        }
+      ],
+      "review_status": "candidate"
+    },
+    {
+      "id": "r_shared13",
+      "kind": "technical",
+      "verbatim": "包一和包三均应提交培训实施计划；本项不适用于包二。",
+      "normalized": "包一和包三均应提交培训实施计划；本项不适用于包二。",
+      "scope_mode": "explicit",
+      "lot_ids": [
+        "lot_1",
+        "lot_3"
+      ],
+      "mandatory": true,
+      "sources": [
+        {
+          "locator": {
+            "file_id": "file_tender",
+            "file_version": 1,
+            "block_id": "b07",
+            "page_index": null,
+            "paragraph_index": 6
+          },
+          "quote": "包一和包三均应提交培训实施计划；本项不适用于包二。"
+        }
+      ],
+      "review_status": "candidate"
+    },
+    {
+      "id": "r_format",
+      "kind": "format",
+      "verbatim": "投标文件格式：第一部分投标函及主体证明；第二部分本包响应表；第三部分本包方案；第四部分报价表；第五部分证明附件。",
+      "normalized": "投标文件格式：第一部分投标函及主体证明；第二部分本包响应表；第三部分本包方案；第四部分报价表；第五部分证明附件。",
+      "scope_mode": "all_lots",
+      "lot_ids": [],
+      "mandatory": true,
+      "sources": [
+        {
+          "locator": {
+            "file_id": "file_tender",
+            "file_version": 1,
+            "block_id": "b08",
+            "page_index": null,
+            "paragraph_index": 7
+          },
+          "quote": "投标文件格式：第一部分投标函及主体证明；第二部分本包响应表；第三部分本包方案；第四部分报价表；第五部分证明附件。"
+        }
+      ],
+      "review_status": "candidate"
+    },
+    {
+      "id": "r_price",
+      "kind": "format",
+      "verbatim": "报价表固定列为：序号、名称、单位、数量、未税单价、未税金额、税率、税额、含税金额。每行未税金额先四舍五入到分，再汇总未税金额；按合计未税金额计算税额，税额四舍五入到分。",
+      "normalized": "报价表固定列为：序号、名称、单位、数量、未税单价、未税金额、税率、税额、含税金额。每行未税金额先四舍五入到分，再汇总未税金额；按合计未税金额计算税额，税额四舍五入到分。",
+      "scope_mode": "all_lots",
+      "lot_ids": [],
+      "mandatory": true,
+      "sources": [
+        {
+          "locator": {
+            "file_id": "file_tender",
+            "file_version": 1,
+            "block_id": "b09",
+            "page_index": null,
+            "paragraph_index": 8
+          },
+          "quote": "报价表固定列为：序号、名称、单位、数量、未税单价、未税金额、税率、税额、含税金额。每行未税金额先四舍五入到分，再汇总未税金额；按合计未税金额计算税额，税额四舍五入到分。"
+        }
+      ],
+      "review_status": "candidate"
+    },
+    {
+      "id": "r_letter",
+      "kind": "signing",
+      "verbatim": "附表投标函固定文字：我方已阅读本次采购文件，并按所投包段提交投标文件。可填写字段：项目编号、包号、投标主体、日期。签署位置由本次授权人员办理。",
+      "normalized": "附表投标函固定文字：我方已阅读本次采购文件，并按所投包段提交投标文件。可填写字段：项目编号、包号、投标主体、日期。签署位置由本次授权人员办理。",
+      "scope_mode": "all_lots",
+      "lot_ids": [],
+      "mandatory": true,
+      "sources": [
+        {
+          "locator": {
+            "file_id": "file_tender",
+            "file_version": 1,
+            "block_id": "b10",
+            "page_index": null,
+            "paragraph_index": 9
+          },
+          "quote": "附表投标函固定文字：我方已阅读本次采购文件，并按所投包段提交投标文件。可填写字段：项目编号、包号、投标主体、日期。签署位置由本次授权人员办理。"
+        }
+      ],
+      "review_status": "candidate"
+    },
+    {
+      "id": "r_score",
+      "kind": "scoring",
+      "verbatim": "评分：各包对应方案可行性最多10分。此项为评分项，不能自动标记为资格强制条件。",
+      "normalized": "评分：各包对应方案可行性最多10分。此项为评分项，不能自动标记为资格强制条件。",
+      "scope_mode": "all_lots",
+      "lot_ids": [],
+      "mandatory": false,
+      "sources": [
+        {
+          "locator": {
+            "file_id": "file_tender",
+            "file_version": 1,
+            "block_id": "b11",
+            "page_index": null,
+            "paragraph_index": 10
+          },
+          "quote": "评分：各包对应方案可行性最多10分。此项为评分项，不能自动标记为资格强制条件。"
+        }
+      ],
+      "review_status": "candidate"
+    },
+    {
+      "id": "r_unknown",
+      "kind": "attachment",
+      "verbatim": "附件说明：另需提交证明C。此处未写明适用包，须结合补充文件确认；不得自动归到全部采购包。",
+      "normalized": "附件说明：另需提交证明C。此处未写明适用包，须结合补充文件确认；不得自动归到全部采购包。",
+      "scope_mode": "unresolved",
+      "lot_ids": [],
+      "mandatory": null,
+      "sources": [
+        {
+          "locator": {
+            "file_id": "file_tender",
+            "file_version": 1,
+            "block_id": "b12",
+            "page_index": null,
+            "paragraph_index": 11
+          },
+          "quote": "附件说明：另需提交证明C。此处未写明适用包，须结合补充文件确认；不得自动归到全部采购包。"
+        }
+      ],
+      "review_status": "candidate"
+    }
+  ],
+  "issues": [
+    {
+      "id": "issue_scope",
+      "kind": "unresolved_scope",
+      "message": "证明C适用包未明确，确认要求前必须处理",
+      "source": {
+        "file_id": "file_tender",
+        "file_version": 1,
+        "block_id": "b12",
+        "page_index": null,
+        "paragraph_index": 11
+      }
+    }
+  ]
+}

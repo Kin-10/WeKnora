@@ -1,0 +1,38 @@
+{
+  "schema_version": "1.0",
+  "section_id": "sec_plan2",
+  "lot_id": "lot_2",
+  "content_revision": 1,
+  "nodes": [
+    {
+      "type": "heading",
+      "id": "n1",
+      "level": 1,
+      "text": "包二配送方案（内部草稿）",
+      "requirement_ids": [
+        "r_lot2"
+      ]
+    },
+    {
+      "type": "paragraph",
+      "id": "n2",
+      "runs": [
+        {
+          "text": "交付期尚待业务确认，本段暂不形成企业承诺。"
+        }
+      ],
+      "requirement_ids": [
+        "r_lot2"
+      ]
+    }
+  ],
+  "internal": {
+    "fact_version_id": "fv_draft_only",
+    "requirement_revision": 1,
+    "source_binding_ids": [],
+    "gaps": [
+      "交付期未确认",
+      "检测报告缺失"
+    ]
+  }
+}

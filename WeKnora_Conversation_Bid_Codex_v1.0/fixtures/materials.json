@@ -1,0 +1,25 @@
+{
+  "materials": [
+    {
+      "id": "m_license",
+      "type": "certificate",
+      "subject": "company_demo",
+      "valid_until": "2027-12-31",
+      "review_status": "approved",
+      "actual_bytes_provided": false
+    },
+    {
+      "id": "m_report_old",
+      "type": "report",
+      "subject": "other_company",
+      "product": "other_product",
+      "review_status": "pending",
+      "actual_bytes_provided": false
+    }
+  ],
+  "expected": {
+    "m_license": "needs_original_for_export",
+    "m_report_old": "not_applicable"
+  },
+  "note": "均为合成元数据，无真实证照。禁止以这些JSON生成伪造证明图片。"
+}

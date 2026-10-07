@@ -1,0 +1,22 @@
+{
+  "selected_lot_ids": [
+    "lot_2"
+  ],
+  "included_requirement_ids": [
+    "r_common",
+    "r_lot2",
+    "r_format",
+    "r_price",
+    "r_letter",
+    "r_score"
+  ],
+  "excluded_requirement_ids": [
+    "r_lot1",
+    "r_lot3",
+    "r_shared13"
+  ],
+  "unresolved_requirement_ids": [
+    "r_unknown"
+  ],
+  "separate_output": true
+}

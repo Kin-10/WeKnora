@@ -1,0 +1,78 @@
+{
+  "type": "object",
+  "properties": {
+    "schema_version": {
+      "const": "1.0"
+    },
+    "card_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "card_type": {
+      "type": "string",
+      "enum": [
+        "upload",
+        "progress",
+        "lot_selection",
+        "requirements",
+        "outline",
+        "facts",
+        "materials",
+        "chapters",
+        "review",
+        "export"
+      ]
+    },
+    "project_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "entity_type": {
+      "type": "string",
+      "minLength": 1
+    },
+    "entity_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "revision": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "active",
+        "waiting_input",
+        "completed",
+        "failed",
+        "stale"
+      ]
+    },
+    "allowed_actions": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "payload": {
+      "type": "object",
+      "additionalProperties": true
+    }
+  },
+  "required": [
+    "schema_version",
+    "card_id",
+    "card_type",
+    "project_id",
+    "entity_type",
+    "entity_id",
+    "revision",
+    "status",
+    "allowed_actions",
+    "payload"
+  ],
+  "additionalProperties": false,
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "业务卡片信封；各卡片payload由对应资源schema及UI规格约束"
+}

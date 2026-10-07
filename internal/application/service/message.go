@@ -108,7 +108,7 @@ func (s *messageService) GetMessage(ctx context.Context, sessionID string, messa
 
 	tenantID := types.MustTenantIDFromContext(ctx)
 	logger.Infof(ctx, "Checking if session exists, tenant ID: %d", tenantID)
-	_, err := loadSessionForRead(ctx, s.sessionRepo, tenantID, sessionUserIDForLookup(ctx), sessionID)
+	session, err := loadSessionForRead(ctx, s.sessionRepo, tenantID, sessionUserIDForLookup(ctx), sessionID)
 	if err != nil {
 		logger.Errorf(ctx, "Failed to get session: %v", err)
 		return nil, err
@@ -125,7 +125,8 @@ func (s *messageService) GetMessage(ctx context.Context, sessionID string, messa
 	}
 
 	logger.Info(ctx, "Message retrieved successfully")
-	return s.clarifyReadArtifactVersions(ctx, sessionID, []*types.Message{message})[0], nil
+	return s.clarifyReadArtifactVersions(ctx, sessionID,
+		projectMessageAgentSources([]*types.Message{message}, messageSessionTenantID(session, tenantID)))[0], nil
 }
 
 // GetMessagesBySession retrieves paginated messages for a specific session
@@ -137,7 +138,7 @@ func (s *messageService) GetMessagesBySession(ctx context.Context,
 
 	tenantID := types.MustTenantIDFromContext(ctx)
 	logger.Infof(ctx, "Checking if session exists, tenant ID: %d", tenantID)
-	_, err := loadSessionForRead(ctx, s.sessionRepo, tenantID, sessionUserIDForLookup(ctx), sessionID)
+	session, err := loadSessionForRead(ctx, s.sessionRepo, tenantID, sessionUserIDForLookup(ctx), sessionID)
 	if err != nil {
 		logger.Errorf(ctx, "Failed to get session: %v", err)
 		return nil, err
@@ -155,7 +156,8 @@ func (s *messageService) GetMessagesBySession(ctx context.Context,
 	}
 
 	logger.Infof(ctx, "Retrieved %d messages successfully", len(messages))
-	return s.clarifyReadArtifactVersions(ctx, sessionID, messages), nil
+	return s.clarifyReadArtifactVersions(ctx, sessionID,
+		projectMessageAgentSources(messages, messageSessionTenantID(session, tenantID))), nil
 }
 
 // GetRecentMessagesBySession retrieves the most recent messages from a session
@@ -171,7 +173,7 @@ func (s *messageService) GetRecentMessagesBySession(ctx context.Context,
 		return nil, errors.New("workspace ID not found in context")
 	}
 	logger.Infof(ctx, "Checking if session exists, tenant ID: %d", tenantID)
-	_, err := loadSessionForRead(ctx, s.sessionRepo, tenantID, sessionUserIDForLookup(ctx), sessionID)
+	session, err := loadSessionForRead(ctx, s.sessionRepo, tenantID, sessionUserIDForLookup(ctx), sessionID)
 	if err != nil {
 		logger.Errorf(ctx, "Failed to get session: %v", err)
 		return nil, err
@@ -188,7 +190,8 @@ func (s *messageService) GetRecentMessagesBySession(ctx context.Context,
 	}
 
 	logger.Infof(ctx, "Retrieved %d recent messages successfully", len(messages))
-	return s.clarifyReadArtifactVersions(ctx, sessionID, messages), nil
+	return s.clarifyReadArtifactVersions(ctx, sessionID,
+		projectMessageAgentSources(messages, messageSessionTenantID(session, tenantID))), nil
 }
 
 // GetMessagesBySessionBeforeTime retrieves messages sent before a specific time
@@ -204,7 +207,7 @@ func (s *messageService) GetMessagesBySessionBeforeTime(ctx context.Context,
 		return nil, errors.New("workspace ID not found in context")
 	}
 	logger.Infof(ctx, "Checking if session exists, tenant ID: %d", tenantID)
-	_, err := loadSessionForRead(ctx, s.sessionRepo, tenantID, sessionUserIDForLookup(ctx), sessionID)
+	session, err := loadSessionForRead(ctx, s.sessionRepo, tenantID, sessionUserIDForLookup(ctx), sessionID)
 	if err != nil {
 		logger.Errorf(ctx, "Failed to get session: %v", err)
 		return nil, err
@@ -222,7 +225,8 @@ func (s *messageService) GetMessagesBySessionBeforeTime(ctx context.Context,
 	}
 
 	logger.Infof(ctx, "Retrieved %d messages before time successfully", len(messages))
-	return s.clarifyReadArtifactVersions(ctx, sessionID, messages), nil
+	return s.clarifyReadArtifactVersions(ctx, sessionID,
+		projectMessageAgentSources(messages, messageSessionTenantID(session, tenantID))), nil
 }
 
 // UpdateMessage updates an existing message's content or metadata

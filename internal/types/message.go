@@ -9,6 +9,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Tencent/WeKnora/internal/bidformat"
+
 	"github.com/google/uuid"
 	"gorm.io/gorm"
 )
@@ -412,14 +414,20 @@ type Message struct {
 	// session's last_request_state it remains stable when users switch agents.
 	AgentID string `json:"agent_id,omitempty" gorm:"type:varchar(36);default:'';index"`
 	// AgentTenantID is the effective/source tenant used to resolve a shared
-	// agent's models and knowledge. It is intentionally not exposed in JSON.
+	// agent's models and knowledge. It also records the tenant of an own agent,
+	// so it cannot be exposed as the explicit shared-agent source selector.
 	AgentTenantID uint64 `json:"-" gorm:"column:agent_tenant_id;default:0"`
+	// AgentSourceTenantID is a read-only projection for restoring a borrowed
+	// agent. Authorized history reads set it only when AgentTenantID differs
+	// from the session owner's tenant; own-agent and legacy rows omit it.
+	AgentSourceTenantID uint64 `json:"agent_source_tenant_id,omitempty" gorm:"-"`
 	// ModelID is the requested/effective chat model binding captured for this
 	// turn. It is useful for reproducibility and suggestion generation.
 	ModelID string `json:"model_id,omitempty" gorm:"type:varchar(64);default:''"`
 	// ExecutionContext stores the non-secret per-turn scope required to safely
 	// generate contextual follow-up questions after the main stream completes.
-	ExecutionContext MessageExecutionContext `json:"-" gorm:"type:jsonb;column:execution_context"`
+	ExecutionContext   MessageExecutionContext `json:"-" gorm:"type:jsonb;column:execution_context"`
+	DocumentFormatting *DocumentFormattingInfo `json:"document_formatting,omitempty" gorm:"-"`
 	// KnowledgeID links this message to a Knowledge entry in the chat history knowledge base
 	// Used for vector search indexing: when set, the message content has been indexed as a Knowledge passage
 	KnowledgeID string `json:"knowledge_id,omitempty" gorm:"type:varchar(36);index"`
@@ -450,24 +458,50 @@ type Message struct {
 // MessageExecutionContext is a message-level snapshot of the non-secret
 // request state used by derived experiences such as follow-up suggestions.
 type MessageExecutionContext struct {
-	AgentConfigHash       string                    `json:"agent_config_hash,omitempty"`
-	QuestionSuggestions   *QuestionSuggestionConfig `json:"question_suggestions,omitempty"`
-	KnowledgeBaseIDs      []string                  `json:"knowledge_base_ids,omitempty"`
-	KnowledgeIDs          []string                  `json:"knowledge_ids,omitempty"`
-	TagIDs                []string                  `json:"tag_ids,omitempty"`
-	TagScopes             []TagScope                `json:"tag_scopes,omitempty"`
-	MCPServiceIDs         []string                  `json:"mcp_service_ids,omitempty"`
-	SkillNames            []string                  `json:"skill_names,omitempty"`
-	LocalBrowserEnabled   bool                      `json:"local_browser_enabled,omitempty"`
-	WebSearchEnabled      bool                      `json:"web_search_enabled"`
-	Locale                string                    `json:"locale,omitempty"`
-	SuggestionAttribution *SuggestionAttribution    `json:"suggestion_attribution,omitempty"`
+	TenderFormatting *TenderFormattingSnapshot `json:"tender_formatting,omitempty"`
+	// Document generation follows an explicit continuation chain, independently
+	// of the number of history turns the model was given. These fields live in
+	// the existing execution-context JSON and never expose storage locations.
+	ContinuationOfMessageID string                    `json:"continuation_of_message_id,omitempty"`
+	DocumentRequested       bool                      `json:"document_requested,omitempty"`
+	AgentConfigHash         string                    `json:"agent_config_hash,omitempty"`
+	QuestionSuggestions     *QuestionSuggestionConfig `json:"question_suggestions,omitempty"`
+	KnowledgeBaseIDs        []string                  `json:"knowledge_base_ids,omitempty"`
+	KnowledgeIDs            []string                  `json:"knowledge_ids,omitempty"`
+	TagIDs                  []string                  `json:"tag_ids,omitempty"`
+	TagScopes               []TagScope                `json:"tag_scopes,omitempty"`
+	MCPServiceIDs           []string                  `json:"mcp_service_ids,omitempty"`
+	SkillNames              []string                  `json:"skill_names,omitempty"`
+	LocalBrowserEnabled     bool                      `json:"local_browser_enabled,omitempty"`
+	WebSearchEnabled        bool                      `json:"web_search_enabled"`
+	Locale                  string                    `json:"locale,omitempty"`
+	SuggestionAttribution   *SuggestionAttribution    `json:"suggestion_attribution,omitempty"`
 	// LangfuseTraceparent is the W3C traceparent of the originating chat
 	// request. Follow-up suggestion generation often runs on a later HTTP
 	// call (or after the SSE handler has already finished the root span);
 	// without this the LLM wrapper auto-creates an orphan chat.completion
 	// trace instead of nesting under the agent turn.
 	LangfuseTraceparent string `json:"langfuse_traceparent,omitempty"`
+}
+
+// TenderFormattingSnapshot freezes the authorized source evidence for this
+// writing task. Continuations retain it even after temporary uploads expire.
+// Original full text and storage handles are deliberately not persisted here.
+type TenderFormattingSnapshot struct {
+	Version     int                     `json:"version"`
+	SourceFiles []string                `json:"source_files,omitempty"`
+	Result      bidformat.Result        `json:"result"`
+	SourceError string                  `json:"source_error,omitempty"`
+	Info        *DocumentFormattingInfo `json:"info,omitempty"`
+}
+
+// DocumentFormattingInfo is the small public projection, also sent on SSE.
+type DocumentFormattingInfo struct {
+	Mode        string   `json:"mode"`
+	Scope       string   `json:"scope"`
+	SourceFiles []string `json:"source_files,omitempty"`
+	Summary     []string `json:"summary,omitempty"`
+	Warning     string   `json:"warning,omitempty"`
 }
 
 func (c MessageExecutionContext) Value() (driver.Value, error) {

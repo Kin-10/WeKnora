@@ -1,0 +1,35 @@
+[
+  {
+    "event_id": "project_demo:1",
+    "seq": 1,
+    "project_id": "project_demo",
+    "event_type": "job.updated",
+    "entity_type": "job",
+    "entity_id": "job_1",
+    "entity_revision": 1,
+    "occurred_at": "2026-09-29T15:00:01Z",
+    "payload": {}
+  },
+  {
+    "event_id": "project_demo:2",
+    "seq": 2,
+    "project_id": "project_demo",
+    "event_type": "analysis.ready",
+    "entity_type": "analysis",
+    "entity_id": "analysis_1",
+    "entity_revision": 2,
+    "occurred_at": "2026-09-29T15:00:02Z",
+    "payload": {}
+  },
+  {
+    "event_id": "project_demo:3",
+    "seq": 3,
+    "project_id": "project_demo",
+    "event_type": "card.updated",
+    "entity_type": "card",
+    "entity_id": "card_lots",
+    "entity_revision": 3,
+    "occurred_at": "2026-09-29T15:00:03Z",
+    "payload": {}
+  }
+]

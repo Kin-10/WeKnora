@@ -46,6 +46,12 @@ type ImageAttachment struct {
 
 // CreateKnowledgeQARequest defines the request structure for knowledge QA
 type CreateKnowledgeQARequest struct {
+	// Optional output selection. Omitted requests automatically create a Word
+	// draft for bid-writing tasks; false retains a text-only response.
+	GenerateDocument *bool `json:"generate_document,omitempty"`
+	// A continuation may only refer to the current completed answer in this
+	// session. The binding is persisted with the new assistant message.
+	ContinuationOfMessageID string `json:"continuation_of_message_id,omitempty"`
 	// Query text; may be empty only when an image or file is attached
 	Query string `json:"query"`
 	// Selected knowledge base ID for this request

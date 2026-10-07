@@ -154,6 +154,28 @@ export async function downloadArtifact(
   );
 }
 
+export interface DocumentFormatting {
+  mode: 'tender' | 'default' | 'blocked';
+  scope: 'business' | 'technical';
+  source_files: string[];
+  summary: string[];
+  warning?: string;
+}
+
+export interface GeneratedMessageDocument extends ArtifactMeta {
+  message_id: string;
+  formatting?: DocumentFormatting;
+}
+
+/** Generate from the persisted answer and its explicit continuation chain. */
+export async function generateMessageDocument(session_id: string, message_id: string) {
+  return post<{ success: boolean; data: GeneratedMessageDocument }>(
+    `/api/v1/sessions/${session_id}/messages/${message_id}/document`,
+    { format: 'docx', include_continuations: true },
+    { timeout: 180000 },
+  );
+}
+
 // deleteMessageArtifact removes a generated file from the session. The stored
 // bytes are reclaimed, so this is not reversible; callers confirm first.
 //

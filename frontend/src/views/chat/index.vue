@@ -132,8 +132,13 @@
                                     :follow-up-loading="Boolean(session.suggestionLoading && !session.suggestionSet?.questions?.length)"
                                     :can-fork="!embeddedMode && forkAffordanceOf(session.id).canFork"
                                     :can-rewind="canRewindMessage(session.id)"
+                                    :can-continue="continuableMessageId === session.id"
+                                    :can-generate-document="canGenerateDocument(session)"
+                                    :document-generating="documentExportInFlight?.messageId === persistedAssistantId(session) && documentExportInFlight?.sessionId === String(session_id)"
                                     @fork="handleFork"
                                     @rewind="handleRewind"
+                                    @continue="handleContinueAnswer"
+                                    @generate-document="handleGenerateDocument"
                                     @render-complete-change="(ready) => handleAnswerRenderComplete(session, ready)">
                                 </botmsg>
                                 <FollowUpSuggestions v-if="session.answerFullyRendered && !session.steerForked && !session.suggestionsDismissed"
@@ -201,8 +206,11 @@ import { useRoute, useRouter, onBeforeRouteLeave, onBeforeRouteUpdate } from 'vu
 import InputField from '../../components/Input-field.vue';
 import botmsg from './components/botmsg.vue';
 import usermsg from './components/usermsg.vue';
-import { getMessageList, getSession, forkSession, rewindSession } from "@/api/chat/index";
+import { getMessageList, getSession, forkSession, rewindSession, generateMessageDocument, downloadArtifact, listMessageArtifacts } from "@/api/chat/index";
+import { canGenerateAnswerDocument, updateAnswerDocumentArtifacts, downloadAnswerDocument } from './answerDocument';
+import { readDocumentFormatting, documentFormattingSuccess } from '@/utils/documentFormatting';
 import { resolveForkAffordance } from './forkPoint';
+import { continuableAnswerId, continuationUserMessage, messageContinuationState, resolveAnswerContinuationState, continuationAttachments } from './answerContinuation';
 import { rewindSkipMessage } from './rewindNotice';
 import { rewindPrefillText, rewindBlockedByOutgoingWork, canReplaceRewindTranscript, shouldApplyRewindLocally, rewindHistoryHasMore, keepMessagesThroughRewindPoint, rewindableMessageIds, rewindHttpConflictCode, rewindConflictI18nKey } from './rewindView';
 import { getSuggestedQuestions } from "@/api/agent/index";
@@ -261,8 +269,10 @@ const props = defineProps({
 const usemenuStore = useMenuStore();
 const useSettingsStoreInstance = useSettingsStore();
 
-// Whether the active chat session is using the Agent pipeline (not quick-answer).
+const activeStreamAgentMode = ref(null);
+// Track the request being streamed even if the user changes the selector.
 const isAgentStreamSession = () => {
+    if (isReplying.value && activeStreamAgentMode.value !== null) return activeStreamAgentMode.value;
     if (props.embeddedMode) {
         return !!(props.agentId && props.agentId !== 'builtin-quick-answer');
     }
@@ -353,6 +363,100 @@ const rewindLockSessionId = ref('')
 const composerLocked = computed(() =>
     rewindInFlight.value && String(session_id.value || '') === rewindLockSessionId.value
 )
+const documentExportInFlight = ref(null);
+const documentExportBlocked = () => Boolean(composerLocked.value || forkInFlight
+    || isReplying.value || isStreaming.value || isImRecovering.value);
+
+function canGenerateDocument(message) {
+    return canGenerateAnswerDocument(message, {
+        embeddedMode: props.embeddedMode,
+        outgoingWork: Boolean(documentExportInFlight.value) || documentExportBlocked(),
+    });
+}
+
+async function handleGenerateDocument(messageId) {
+    if (documentExportInFlight.value || !session_id.value) return;
+    const source = messagesList.find(message => message.id === messageId || persistedAssistantId(message) === messageId);
+    if (!canGenerateDocument(source)) return;
+    const sourceSessionId = String(session_id.value);
+    const sourceMessageId = persistedAssistantId(source);
+    const stillCurrent = () => String(session_id.value) === sourceSessionId && messagesList.includes(source)
+        && canGenerateAnswerDocument(source, { outgoingWork: documentExportBlocked() });
+    documentExportInFlight.value = { sessionId: sourceSessionId, messageId: sourceMessageId };
+    try {
+        const result = await generateMessageDocument(sourceSessionId, sourceMessageId);
+        if (!stillCurrent()) return;
+        const artifact = result?.data;
+        if (!result?.success || !Number.isInteger(artifact?.index) || artifact.index < 0
+            || artifact.message_id !== sourceMessageId) throw new Error('Invalid document result');
+        const formatting = readDocumentFormatting(artifact.formatting);
+        if (formatting) source.document_formatting = formatting;
+        updateAnswerDocumentArtifacts(source, [artifact]);
+        const [file, metadata] = await Promise.allSettled([
+            downloadArtifact(sourceSessionId, sourceMessageId, artifact.index),
+            listMessageArtifacts(sourceSessionId, sourceMessageId),
+        ]);
+        if (!stillCurrent()) return;
+        if (metadata.status === 'fulfilled' && Array.isArray(metadata.value?.data)) {
+            updateAnswerDocumentArtifacts(source, metadata.value.data, true);
+        }
+        if (file.status === 'rejected') throw file.reason;
+        downloadAnswerDocument(file.value, artifact.file_name);
+        if (formatting) MessagePlugin.success(documentFormattingSuccess(formatting, t));
+    } catch (error) {
+        if (stillCurrent()) {
+            const response = error?.response?.data || error;
+            const formatting = readDocumentFormatting(response?.data?.formatting
+                || response?.formatting || response?.document_formatting
+                || response?.error?.details?.document_formatting || response?.error?.details?.formatting);
+            if (formatting) source.document_formatting = formatting;
+            MessagePlugin.error(formatting?.warning || t('chat.generateWordFailed'));
+        }
+    } finally {
+        documentExportInFlight.value = null;
+    }
+}
+
+const continuationInFlight = ref(false);
+const continuationBlocked = () => Boolean(composerLocked.value || forkInFlight
+    || isReplying.value || isStreaming.value || isImRecovering.value);
+const continuableMessageId = computed(() => continuableAnswerId(messagesList, {
+    embeddedMode: props.embeddedMode,
+    outgoingWork: continuationInFlight.value || continuationBlocked(),
+}));
+
+async function handleContinueAnswer(messageId) {
+    if (continuationInFlight.value || !session_id.value) return;
+    const source = messagesList.at(-1);
+    const eligible = () => source && continuableAnswerId(messagesList, {
+        embeddedMode: props.embeddedMode, outgoingWork: continuationBlocked(),
+    }) === String(source.id || '')
+        && (persistedAssistantId(source) === messageId || source.id === messageId);
+    if (!eligible()) return;
+    const sourceSessionId = String(session_id.value);
+    const userMessage = continuationUserMessage(messagesList, String(source.id));
+    continuationInFlight.value = true;
+    try {
+        let state = messageContinuationState(source, sourceSessionId);
+        if (!state) {
+            const res = await getSession(sourceSessionId);
+            state = res?.data?.last_request_state;
+        }
+        // Navigation or another send while settings load must never redirect or
+        // cancel that newer turn. The old answer is left intact throughout.
+        if (String(session_id.value) !== sourceSessionId || !eligible()) return;
+        const requestState = resolveAnswerContinuationState(source, state, userMessage);
+        if (!requestState) throw new Error('Original answer settings unavailable');
+        await sendMsg(t('chat.continueAnswerPrompt'), requestState.model_id,
+            requestState.mentioned_items || [], [], continuationAttachments(userMessage), {
+                requestState, continuationOfMessageId: persistedAssistantId(source),
+            });
+    } catch (error) {
+        if (String(session_id.value) === sourceSessionId) MessagePlugin.error(t('chat.continueAnswerFailed'));
+    } finally {
+        continuationInFlight.value = false;
+    }
+}
 
 function stashForkLanding(sessionId, text) {
     const payload = JSON.stringify({ sessionId, text })
@@ -804,6 +908,7 @@ watch([() => route.params], async (newvalue) => {
         steerQueue.value = [];
         session_id.value = newvalue[0].chatid;
         currentSession.value = null;
+        activeStreamAgentMode.value = null;
         clearCitationChunkCache();
 
         // 切换会话时，重置状态
@@ -1372,16 +1477,23 @@ const attachSteerFollowUp = async (completedAssistantId) => {
 
 const sendMsg = async (value, modelId = '', mentionedItems = [], imageFiles = [], attachmentFiles = [], options = {}) => {
     if (composerLocked.value) return
-    const reasoningEffort = props.embeddedMode ? undefined : (useSettingsStoreInstance.reasoningEffortOverride || undefined);
+    const requestState = options?.requestState;
+    const agentEnabled = requestState ? requestState.agent_enabled : (props.embeddedMode
+        ? Boolean(props.agentId && props.agentId !== 'builtin-quick-answer')
+        : useSettingsStoreInstance.isAgentStreamMode);
+    const reasoningEffort = requestState ? requestState.reasoning_effort : (props.embeddedMode
+        ? undefined : (useSettingsStoreInstance.reasoningEffortOverride || undefined));
+    activeStreamAgentMode.value = agentEnabled;
     stopStream();
     prepareForNewOutgoingMessage();
     activitySessionId.value = String(session_id.value);
     isReplying.value = true;
     loading.value = true;
-    const selectedAgentId = props.embeddedMode ? props.agentId : (useSettingsStoreInstance.selectedAgentId || '');
-    const selectedAgentSourceTenantId = props.embeddedMode
+    const selectedAgentId = requestState ? requestState.agent_id : (props.embeddedMode
+        ? props.agentId : (useSettingsStoreInstance.selectedAgentId || ''));
+    const selectedAgentSourceTenantId = requestState ? requestState.agent_source_tenant_id : (props.embeddedMode
         ? undefined
-        : (useSettingsStoreInstance.selectedAgentSourceTenantId || undefined);
+        : (useSettingsStoreInstance.selectedAgentSourceTenantId || undefined));
 
     // Images are unified with the attachment pipeline: on the authenticated web
     // client they upload as temporary documents (understood in the background by
@@ -1493,21 +1605,19 @@ const sendMsg = async (value, modelId = '', mentionedItems = [], imageFiles = []
     userHasScrolledUp.value = false;
     scrollToBottom(true);
 
-    // Get agent mode status from settings store (prefer selectedAgentId for builtins)
-    const agentEnabled = props.embeddedMode
-        ? (props.agentId && props.agentId !== 'builtin-quick-answer')
-        : useSettingsStoreInstance.isAgentStreamMode;
-
     // Get web search status from settings store
-    const webSearchEnabled = props.embeddedMode ? false : useSettingsStoreInstance.isWebSearchEnabled;
+    const webSearchEnabled = requestState ? requestState.web_search_enabled : (props.embeddedMode
+        ? false : useSettingsStoreInstance.isWebSearchEnabled);
 
     // Get knowledge_base_ids from settings store (selected by user via KnowledgeBaseSelector)
     // Merge @mentioned KB/file IDs so retrieval uses the same targets user @mentioned (including shared KBs)
-    const sidebarKbIds = props.embeddedMode ? props.kbIds : (useSettingsStoreInstance.settings.selectedKnowledgeBases || []);
-    const sidebarFileIds = props.embeddedMode ? [] : (useSettingsStoreInstance.settings.selectedFiles || []);
+    const sidebarKbIds = requestState ? requestState.knowledge_base_ids : (props.embeddedMode
+        ? props.kbIds : (useSettingsStoreInstance.settings.selectedKnowledgeBases || []));
+    const sidebarFileIds = requestState ? requestState.knowledge_ids : (props.embeddedMode
+        ? [] : (useSettingsStoreInstance.settings.selectedFiles || []));
     const kbIdSet = new Set(sidebarKbIds);
     const fileIdSet = new Set(sidebarFileIds);
-    for (const kbId of pendingSuggestionKnowledgeBaseIds) {
+    for (const kbId of requestState ? [] : pendingSuggestionKnowledgeBaseIds) {
         if (kbId) kbIdSet.add(kbId);
     }
     for (const item of mentionedItems || []) {
@@ -1520,16 +1630,16 @@ const sendMsg = async (value, modelId = '', mentionedItems = [], imageFiles = []
     }
     const kbIds = [...kbIdSet];
     const knowledgeIds = [...fileIdSet];
-    const tagIds = [...new Set((mentionedItems || []).filter(item => item.type === 'tag' && item.id).map(item => item.id))];
-    const mcpServiceIds = [...new Set((mentionedItems || []).filter(item => item.type === 'mcp' && item.id).map(item => item.id))];
-    const skillNames = [...new Set((mentionedItems || []).filter(item => item.type === 'skill' && item.id).map(item => item.skill_name || item.id))];
+    const tagIds = [...new Set([...(requestState?.tag_ids || []), ...(mentionedItems || []).filter(item => item.type === 'tag' && item.id).map(item => item.id)])];
+    const mcpServiceIds = [...new Set([...(requestState?.mcp_service_ids || []), ...(mentionedItems || []).filter(item => item.type === 'mcp' && item.id).map(item => item.id)])];
+    const skillNames = [...new Set([...(requestState?.skill_names || []), ...(mentionedItems || []).filter(item => item.type === 'skill' && item.id).map(item => item.skill_name || item.id)])];
 
     const endpoint = agentEnabled ? '/api/v1/agent-chat' : '/api/v1/knowledge-chat';
 
     const requestMcpServiceIds = agentEnabled ? mcpServiceIds : [];
     const requestSkillNames = agentEnabled ? skillNames : [];
 
-    const suggestionAttribution = pendingSuggestionAttribution;
+    const suggestionAttribution = requestState ? null : pendingSuggestionAttribution;
     pendingSuggestionAttribution = null;
     pendingSuggestionKnowledgeBaseIds = [];
     await startStream({
@@ -1540,7 +1650,9 @@ const sendMsg = async (value, modelId = '', mentionedItems = [], imageFiles = []
         agent_id: selectedAgentId,
         agent_source_tenant_id: selectedAgentSourceTenantId,
         web_search_enabled: webSearchEnabled,
-        local_browser_enabled: !props.embeddedMode && agentEnabled && useSettingsStoreInstance.isLocalBrowserEnabled && !useBrowserConnectionStore().knownOffline,
+        local_browser_enabled: !props.embeddedMode && agentEnabled
+            && (requestState ? requestState.local_browser_enabled : useSettingsStoreInstance.isLocalBrowserEnabled)
+            && !useBrowserConnectionStore().knownOffline,
         summary_model_id: modelId,
         reasoning_effort: reasoningEffort,
         mcp_service_ids: requestMcpServiceIds,
@@ -1553,6 +1665,7 @@ const sendMsg = async (value, modelId = '', mentionedItems = [], imageFiles = []
         query: value,
         suggestion_attribution: suggestionAttribution || undefined,
         question_origin: options?.questionOrigin,
+        continuation_of_message_id: options?.continuationOfMessageId,
         method: 'POST',
         url: endpoint,
     });

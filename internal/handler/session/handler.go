@@ -26,11 +26,13 @@ type Handler struct {
 	streamManager        interfaces.StreamManager        // Manager for handling streaming responses
 	config               *config.Config                  // Application configuration
 	knowledgebaseService interfaces.KnowledgeBaseService // Service for managing knowledge bases
-	customAgentService   interfaces.CustomAgentService   // Service for managing custom agents
-	tenantService        interfaces.TenantService        // Service for loading tenant (shared agent context)
-	agentShareService    interfaces.AgentShareService    // Service for resolving shared agents (KB scope in retrieval)
-	kbShareService       interfaces.KBShareService       // Service for resolving shared KB permissions
-	fileService          interfaces.FileService          // Service for file storage (image uploads)
+	knowledgeService     interfaces.KnowledgeService
+	chunkService         interfaces.ChunkService
+	customAgentService   interfaces.CustomAgentService // Service for managing custom agents
+	tenantService        interfaces.TenantService      // Service for loading tenant (shared agent context)
+	agentShareService    interfaces.AgentShareService  // Service for resolving shared agents (KB scope in retrieval)
+	kbShareService       interfaces.KBShareService     // Service for resolving shared KB permissions
+	fileService          interfaces.FileService        // Service for file storage (image uploads)
 	resourceCatalog      interfaces.ResourceCatalog
 	storageResolver      interfaces.StorageBackendResolver
 	modelService         interfaces.ModelService // Service for model management (VLM access)
@@ -82,6 +84,8 @@ func NewHandler(
 	streamManager interfaces.StreamManager,
 	config *config.Config,
 	knowledgebaseService interfaces.KnowledgeBaseService,
+	knowledgeService interfaces.KnowledgeService,
+	chunkService interfaces.ChunkService,
 	customAgentService interfaces.CustomAgentService,
 	tenantService interfaces.TenantService,
 	agentShareService interfaces.AgentShareService,
@@ -117,6 +121,8 @@ func NewHandler(
 		streamManager:         streamManager,
 		config:                config,
 		knowledgebaseService:  knowledgebaseService,
+		knowledgeService:      knowledgeService,
+		chunkService:          chunkService,
 		customAgentService:    customAgentService,
 		tenantService:         tenantService,
 		agentShareService:     agentShareService,

@@ -611,6 +611,7 @@ export const useSettingsStore = defineStore("settings", {
 export interface SessionLastRequestStatePayload {
   reasoning_effort?: string;
   agent_id?: string;
+  agent_source_tenant_id?: string | number;
   agent_enabled?: boolean;
   model_id?: string;
   knowledge_base_ids?: string[];

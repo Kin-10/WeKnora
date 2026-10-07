@@ -1,0 +1,86 @@
+[
+  {
+    "id": "b01",
+    "file_id": "file_tender",
+    "file_version": 1,
+    "order": 0,
+    "text": "项目：合成采购演示；项目编号 DEMO-2026-001。本文件仅供开发测试。"
+  },
+  {
+    "id": "b02",
+    "file_id": "file_tender",
+    "file_version": 1,
+    "order": 1,
+    "text": "本项目分三个采购包：包一设备、包二耗材、包三培训服务。第二章为投标须知，并非第二个采购包。允许兼投，各包分别编制投标文件。"
+  },
+  {
+    "id": "b03",
+    "file_id": "file_tender",
+    "file_version": 1,
+    "order": 2,
+    "text": "所有采购包均需提供当前有效的营业执照，并提交投标函。投标函使用本文件附表固定格式。"
+  },
+  {
+    "id": "b04",
+    "file_id": "file_tender",
+    "file_version": 1,
+    "order": 3,
+    "text": "包一采购设备A共2台，最高限价100000元；交付期不超过15天，质保3年。需提供设备A的产品说明书。"
+  },
+  {
+    "id": "b05",
+    "file_id": "file_tender",
+    "file_version": 1,
+    "order": 4,
+    "text": "包二采购耗材B共100盒，最高限价20000元；交付期不超过7天，需提供适用于耗材B的检测报告。"
+  },
+  {
+    "id": "b06",
+    "file_id": "file_tender",
+    "file_version": 1,
+    "order": 5,
+    "text": "包三采购培训服务2场，最高限价10000元；需提供培训计划和讲师履历。"
+  },
+  {
+    "id": "b07",
+    "file_id": "file_tender",
+    "file_version": 1,
+    "order": 6,
+    "text": "包一和包三均应提交培训实施计划；本项不适用于包二。"
+  },
+  {
+    "id": "b08",
+    "file_id": "file_tender",
+    "file_version": 1,
+    "order": 7,
+    "text": "投标文件格式：第一部分投标函及主体证明；第二部分本包响应表；第三部分本包方案；第四部分报价表；第五部分证明附件。"
+  },
+  {
+    "id": "b09",
+    "file_id": "file_tender",
+    "file_version": 1,
+    "order": 8,
+    "text": "报价表固定列为：序号、名称、单位、数量、未税单价、未税金额、税率、税额、含税金额。每行未税金额先四舍五入到分，再汇总未税金额；按合计未税金额计算税额，税额四舍五入到分。"
+  },
+  {
+    "id": "b10",
+    "file_id": "file_tender",
+    "file_version": 1,
+    "order": 9,
+    "text": "附表投标函固定文字：我方已阅读本次采购文件，并按所投包段提交投标文件。可填写字段：项目编号、包号、投标主体、日期。签署位置由本次授权人员办理。"
+  },
+  {
+    "id": "b11",
+    "file_id": "file_tender",
+    "file_version": 1,
+    "order": 10,
+    "text": "评分：各包对应方案可行性最多10分。此项为评分项，不能自动标记为资格强制条件。"
+  },
+  {
+    "id": "b12",
+    "file_id": "file_tender",
+    "file_version": 1,
+    "order": 11,
+    "text": "附件说明：另需提交证明C。此处未写明适用包，须结合补充文件确认；不得自动归到全部采购包。"
+  }
+]

@@ -21,8 +21,13 @@
                     :embedded-mode="embeddedMode"
                     :can-fork="canFork"
                     :can-rewind="canRewind"
+                    :can-continue="canContinue"
+                    :can-generate-document="canGenerateDocument"
+                    :document-generating="documentGenerating"
                     @fork="emit('fork', $event)"
                     @rewind="emit('rewind', $event)"
+                    @continue="emit('continue', $event)"
+                    @generate-document="emit('generate-document', $event)"
                     @render-complete-change="emit('render-complete-change', $event)" />
             </div>
             <template v-else>
@@ -38,8 +43,13 @@
                     :embedded-mode="embeddedMode"
                     :can-fork="canFork"
                     :can-rewind="canRewind"
+                    :can-continue="canContinue"
+                    :can-generate-document="canGenerateDocument"
+                    :document-generating="documentGenerating"
                     @fork="emit('fork', $event)"
                     @rewind="emit('rewind', $event)"
+                    @continue="emit('continue', $event)"
+                    @generate-document="emit('generate-document', $event)"
                     @render-complete-change="emit('render-complete-change', $event)" />
             </template>
             <deepThink :deepSession="session" v-if="session.showThink && !session.isAgentMode"></deepThink>
@@ -111,6 +121,16 @@
                         <t-icon name="info-circle" />
                     </t-button>
                 </t-tooltip>
+                <t-button v-if="canContinue" size="small" variant="outline" shape="round" class="answer-toolbar__continue"
+                    @click.stop="emitContinue" :title="t('chat.continueAnswer')">
+                    <t-icon name="play-circle" />{{ t('chat.continueAnswer') }}
+                </t-button>
+                <t-button v-if="canGenerateDocument || documentGenerating" size="small" variant="outline" shape="round"
+                    class="answer-toolbar__document" :loading="documentGenerating" :disabled="documentGenerating"
+                    @click.stop="emitGenerateDocument" :title="t('chat.generateWordHint')">
+                    <t-icon v-if="!documentGenerating" name="file-word" />{{ t('chat.generateWord') }}
+                </t-button>
+                <DocumentFormattingNotice v-if="!session.steerForked" :value="session.document_formatting" />
                 <ChatRequestInfoButton v-if="showRequestInfo" :session="session" :session-id="sessionId" />
                 <transition name="follow-up-toolbar-loading">
                     <span v-if="followUpLoading" class="answer-toolbar__follow-up-loading" role="status"
@@ -149,6 +169,7 @@ import ChatRequestInfoButton from '@/components/ChatRequestInfoButton.vue';
 import ChatCitationFloat from '@/components/ChatCitationFloat.vue';
 import picturePreview from '@/components/picture-preview.vue';
 import ChatArtifactsDrawer from './ChatArtifactsDrawer.vue';
+import DocumentFormattingNotice from './DocumentFormattingNotice.vue';
 import { isCollectingSkillArtifacts } from '@/utils/skillArtifacts';
 import { useArtifactArriveMotion } from '@/composables/useArtifactArriveMotion';
 import { useChatSandboxPanel } from '@/composables/useChatSandboxPanel';
@@ -199,7 +220,7 @@ const mentionTagIcon = (item) => {
     return 'file';
 };
 
-const emit = defineEmits(['scroll-bottom', 'render-complete-change', 'fork', 'rewind'])
+const emit = defineEmits(['scroll-bottom', 'render-complete-change', 'fork', 'rewind', 'continue', 'generate-document'])
 const { t } = useI18n()
 const uiStore = useUIStore();
 let parentMd = ref()
@@ -242,6 +263,18 @@ const props = defineProps({
         default: false
     },
     canRewind: {
+        type: Boolean,
+        default: false
+    },
+    canContinue: {
+        type: Boolean,
+        default: false
+    },
+    canGenerateDocument: {
+        type: Boolean,
+        default: false
+    },
+    documentGenerating: {
         type: Boolean,
         default: false
     }
@@ -399,6 +432,17 @@ const { displayed: typedAnswer } = useTypewriter(
 const answerFullyRendered = computed(() =>
     Boolean(props.session?.is_completed) && typedAnswer.value.length >= answerText.value.length
 );
+const emitContinue = () => {
+    if (props.canContinue && answerFullyRendered.value && !props.session?.persistence_error) {
+        emit('continue', persistedAssistantId(props.session) || props.session?.id);
+    }
+};
+const emitGenerateDocument = () => {
+    if (props.canGenerateDocument && !props.documentGenerating && answerFullyRendered.value
+        && !props.session?.persistence_error) {
+        emit('generate-document', persistedAssistantId(props.session) || props.session?.id);
+    }
+};
 useProtectedImageRecovery(() => parentMd.value, () => protectedFileAccess.value,
     () => !props.session?.isAgentMode && !props.session?.persistence_error && answerFullyRendered.value);
 
@@ -528,6 +572,22 @@ onBeforeUnmount(() => {
 @import '../../../components/css/chat-markdown.less';
 @import '../../../components/css/chat-message-shared.less';
 @import '../../../components/css/chat-citations.less';
+
+.answer-toolbar { flex-wrap: wrap; }
+
+.answer-toolbar :deep(.t-button.answer-toolbar__continue),
+.answer-toolbar :deep(.t-button.answer-toolbar__document) {
+    width: auto;
+    min-width: auto;
+    flex: none;
+    padding: 0 8px;
+    white-space: nowrap;
+
+    .t-button__content,
+    .t-button__text {
+        gap: 6px;
+    }
+}
 
 .bot_msg {
     &.is-embedded {

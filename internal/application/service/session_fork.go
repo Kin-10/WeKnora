@@ -11,6 +11,7 @@ package service
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
@@ -520,10 +521,47 @@ func historyThroughForkPoint(listed []*types.Message, forkPoint *types.Message) 
 func copyMessagesInto(newSessionID string, history []*types.Message) []*types.Message {
 	copies := make([]*types.Message, 0, len(history))
 	requestIDs := make(map[string]string, len(history))
-	for _, src := range history {
+	messageIDs := make([]string, len(history))
+	sourceIndices := make(map[string]int, len(history))
+	for i, src := range history {
+		messageIDs[i] = uuid.New().String()
+		if src.ID == "" {
+			continue
+		}
+		if _, duplicate := sourceIndices[src.ID]; duplicate {
+			// Ambiguous identifiers must not be resolved to an arbitrary turn.
+			sourceIndices[src.ID] = -1
+		} else {
+			sourceIndices[src.ID] = i
+		}
+	}
+	for i, src := range history {
 		clone := *src
-		clone.ID = uuid.New().String()
+		clone.ID = messageIDs[i]
 		clone.SessionID = newSessionID
+		if src.ExecutionContext.TenderFormatting != nil {
+			data, _ := json.Marshal(src.ExecutionContext.TenderFormatting)
+			var snapshot types.TenderFormattingSnapshot
+			if json.Unmarshal(data, &snapshot) == nil {
+				clone.ExecutionContext.TenderFormatting = &snapshot
+			}
+		}
+		clone.DocumentFormatting = nil
+		if parentID := src.ExecutionContext.ContinuationOfMessageID; parentID != "" {
+			parentIndex, present := sourceIndices[parentID]
+			if present && parentIndex >= 0 && parentIndex < i {
+				parent := history[parentIndex]
+				if src.SessionID != "" && parent.SessionID == src.SessionID &&
+					src.Role == "assistant" && parent.Role == "assistant" &&
+					parent.IsCompleted && !parent.DeletedAt.Valid {
+					clone.ExecutionContext.ContinuationOfMessageID = messageIDs[parentIndex]
+				}
+			}
+			// Leave an unresolvable explicit parent intact. The document chain
+			// validator searches only this fork's history and will reject it,
+			// rather than following it into the source session or clearing it
+			// and guessing a different ancestor from a generic "continue" turn.
+		}
 		// The parent already indexed these into the chat-history knowledge
 		// base. Clearing the link stops the copy from being re-indexed, which
 		// would both duplicate retrieval hits and burn embedding quota.

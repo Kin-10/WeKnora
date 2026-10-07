@@ -8,6 +8,7 @@ import * as finalContent from '../utils/finalArtifactContent.ts'
 import * as history from '../utils/rag-pipeline-history.ts'
 import * as timestamps from '../utils/messageTimestamp.ts'
 import * as steering from '../utils/steerStreamFork.ts'
+import * as documentFormatting from '../utils/documentFormatting.ts'
 import { useProtectedImageRecovery } from './useProtectedImageRecovery.ts'
 import { clearProtectedFileFailureCache, hydrateProtectedFileImages } from '../utils/security.ts'
 import { setDefaultProtectedFileAccess } from '../utils/protectedFileAccess.ts'
@@ -25,6 +26,7 @@ const modules: Record<string, unknown> = {
   '@/utils/rag-pipeline-history': history,
   '@/utils/messageTimestamp': timestamps,
   '@/utils/steerStreamFork': steering,
+  '@/utils/documentFormatting': documentFormatting,
 }
 const exports: { useChatStreamHandler?: typeof StreamHandler } = {}
 vm.runInNewContext(compiled, {
@@ -93,7 +95,7 @@ function setup(t: TestContext, mode: 'ordinary' | 'quick-timeline' | 'agent') {
     handler.processStreamChunk({ id: 'request', response_type, content, done, data })
   }
   return {
-    message, loading, isReplying, currentAssistantMessageId, replies, turns, errors, img, requests, answer, send, revealed,
+    handler, message, messagesList, loading, isReplying, currentAssistantMessageId, replies, turns, errors, img, requests, answer, send, revealed,
     persist: () => { persisted = true },
     render: () => hydrateProtectedFileImages(root, access()),
     flush: async () => {
@@ -105,6 +107,56 @@ function setup(t: TestContext, mode: 'ordinary' | 'quick-timeline' | 'agent') {
 }
 
 for (const mode of ['ordinary', 'quick-timeline', 'agent'] as const) {
+  test(`${mode}: completed document formatting appears immediately and survives history reload`, async t => {
+    const h = setup(t, mode)
+    const formatting = { mode: 'tender', scope: 'technical', source_files: ['当前招标.pdf'],
+      summary: ['宋体四号', '固定行距 30 磅'], warning: '部分表格格式需核对' }
+    h.send('answer', '原有回答内容', false, { event_id: 'answer' })
+    h.send('complete', '', true, { final_content: '原有回答内容', document_formatting: formatting })
+    assert.deepEqual(h.message.document_formatting, formatting)
+    assert.equal(h.message.content, '原有回答内容')
+    h.messagesList.splice(0)
+    await h.handler.handleMsgList([{ id: 'reloaded', role: 'assistant', content: '原有回答内容',
+      is_completed: true, document_formatting: formatting }])
+    assert.deepEqual(h.messagesList[0].document_formatting, formatting)
+    assert.equal(h.messagesList[0].content, '原有回答内容')
+  })
+
+  test(`${mode}: blocked Word generation retains its visible reason and the answer`, async t => {
+    const h = setup(t, mode)
+    const formatting = { mode: 'blocked', scope: 'business', source_files: ['当前招标.pdf'],
+      summary: [], warning: '招标文件要求商务标与技术暗标分开制作，请分别生成。' }
+    h.send('answer', '标书正文仍保留', false, { event_id: 'answer' })
+    h.send('complete', '', true, { final_content: '标书正文仍保留', document_formatting: formatting })
+    assert.deepEqual(h.message.document_formatting, formatting)
+    assert.equal(h.message.artifacts, undefined)
+    assert.equal(h.message.content, '标书正文仍保留')
+    assert.equal(h.message.is_completed, true)
+  })
+
+  test(`${mode}: terminal truncation survives persisted completion without duplicating the answer`, async t => {
+    const h = setup(t, mode)
+    h.send('answer', 'half an answer', false, { event_id: 'answer' })
+    h.send('answer', '', true, { event_id: 'answer', done: true, truncated: true })
+    assert.equal(h.message.truncated, true)
+    assert.equal(h.message.is_completed, false, 'answer.done does not authorize a new turn')
+    h.send('complete', '', true, { final_content: 'half an answer' })
+    h.send('complete', '', true)
+    assert.equal(h.message.content, 'half an answer')
+    assert.equal(h.message.truncated, true)
+    assert.equal(h.message.is_completed, true)
+    assert.equal(h.messagesList.length, 1)
+  })
+
+  test(`${mode}: an ordinary completion is not marked truncated`, async t => {
+    const h = setup(t, mode)
+    h.send('answer', 'complete answer', false, { event_id: 'answer' })
+    h.send('answer', '', true, { event_id: 'answer', done: true })
+    h.send('complete', '', true, { final_content: 'complete answer' })
+    assert.equal(h.message.truncated, undefined)
+    assert.equal(h.message.content, 'complete answer')
+  })
+
   test(`${mode}: answer.done → persistence → complete retries the image exactly once`, async t => {
     const h = setup(t, mode)
     h.send('answer', h.answer, false, { event_id: 'answer' })

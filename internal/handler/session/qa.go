@@ -38,38 +38,39 @@ const (
 
 // qaRequestContext holds all the common data needed for QA requests
 type qaRequestContext struct {
-	ctx                   context.Context
-	c                     *gin.Context
-	sessionID             string
-	requestID             string
-	receivedAt            time.Time // Wall-clock time the handler started processing the request
-	query                 string    // Question sent to models; the upload-only question when the user typed nothing
-	userInput             string    // Text the user typed, stored on the user message; may be empty
-	session               *types.Session
-	customAgent           *types.CustomAgent
-	assistantMessage      *types.Message
-	knowledgeBaseIDs      []string
-	knowledgeIDs          []string
-	tagScopes             []types.TagScope
-	tagIDs                []string
-	mcpServiceIDs         []string
-	skillNames            []string
-	summaryModelID        string
-	reasoningEffort       string
-	localBrowserEnabled   bool
-	webSearchEnabled      bool
-	mentionedItems        types.MentionedItems
-	effectiveTenantID     uint64                   // when using shared agent, tenant ID for model/KB/MCP resolution; 0 = use context tenant
-	sharedAgentReadOnly   bool                     // access was granted by a read-only agent share
-	images                []ImageAttachment        // Uploaded images with analysis text
-	userMessageID         string                   // Created user message ID (populated after createUserMessage)
-	userCreatedAt         time.Time                // Persisted user message timestamp, echoed on agent_query
-	channel               string                   // Source channel: "web", "api", "im", etc.
-	attachments           types.MessageAttachments // Processed base64 file attachments (legacy inline uploads)
-	attachmentIDs         []string                 // Pre-uploaded session-scoped document IDs, resolved after SSE starts
-	attachmentMetas       types.MessageAttachments // Metadata-only view of attachmentIDs for the persisted user message
-	suggestionAttribution *types.SuggestionAttribution
-	questionOrigin        *types.QuestionOrigin
+	tenderFormattingPrompt string
+	ctx                    context.Context
+	c                      *gin.Context
+	sessionID              string
+	requestID              string
+	receivedAt             time.Time // Wall-clock time the handler started processing the request
+	query                  string    // Question sent to models; the upload-only question when the user typed nothing
+	userInput              string    // Text the user typed, stored on the user message; may be empty
+	session                *types.Session
+	customAgent            *types.CustomAgent
+	assistantMessage       *types.Message
+	knowledgeBaseIDs       []string
+	knowledgeIDs           []string
+	tagScopes              []types.TagScope
+	tagIDs                 []string
+	mcpServiceIDs          []string
+	skillNames             []string
+	summaryModelID         string
+	reasoningEffort        string
+	localBrowserEnabled    bool
+	webSearchEnabled       bool
+	mentionedItems         types.MentionedItems
+	effectiveTenantID      uint64                   // when using shared agent, tenant ID for model/KB/MCP resolution; 0 = use context tenant
+	sharedAgentReadOnly    bool                     // access was granted by a read-only agent share
+	images                 []ImageAttachment        // Uploaded images with analysis text
+	userMessageID          string                   // Created user message ID (populated after createUserMessage)
+	userCreatedAt          time.Time                // Persisted user message timestamp, echoed on agent_query
+	channel                string                   // Source channel: "web", "api", "im", etc.
+	attachments            types.MessageAttachments // Processed base64 file attachments (legacy inline uploads)
+	attachmentIDs          []string                 // Pre-uploaded session-scoped document IDs, resolved after SSE starts
+	attachmentMetas        types.MessageAttachments // Metadata-only view of attachmentIDs for the persisted user message
+	suggestionAttribution  *types.SuggestionAttribution
+	questionOrigin         *types.QuestionOrigin
 	// resourceRewriter turns internal storage references in the outbound stream
 	// into directly loadable URLs when the caller asks for `resource_urls=public`.
 	// Disabled (a pass-through) in the default handle mode.
@@ -108,6 +109,7 @@ func (rc *qaRequestContext) buildQARequest() *types.QARequest {
 	req := &types.QARequest{
 		Session:             rc.session,
 		Query:               rc.query,
+		QuotedContext:       rc.tenderFormattingPrompt,
 		AssistantMessageID:  rc.assistantMessage.ID,
 		SummaryModelID:      rc.summaryModelID,
 		ReasoningEffort:     rc.reasoningEffort,
@@ -438,6 +440,9 @@ func (h *Handler) parseQARequest(c *gin.Context, logPrefix string) (*qaRequestCo
 	)
 
 	executionContext.LocalBrowserEnabled = request.LocalBrowserEnabled
+	if err := h.configureDocumentRequest(ctx, session, &request, &executionContext); err != nil {
+		return nil, nil, err
+	}
 
 	// Build request context
 	reqCtx := &qaRequestContext{
@@ -1461,6 +1466,7 @@ func (h *Handler) executeQA(reqCtx *qaRequestContext, mode qaMode, generateTitle
 		// Resolve pre-uploaded attachments (may still be parsing): waits with a
 		// timeline step so the send is not blocked, then injects content/images.
 		h.resolveTemporaryAttachments(streamCtx, reqCtx)
+		h.prepareTenderWritingContext(streamCtx.asyncCtx, reqCtx)
 
 		// Run VLM image analysis if applicable
 		h.runVLMAnalysisIfNeeded(streamCtx, reqCtx, mode)
@@ -1836,9 +1842,18 @@ func (h *Handler) persistLastRequestState(parentCtx context.Context, reqCtx *qaR
 	if mode == qaModeAgent && reqCtx.customAgent != nil {
 		agentEnabled = reqCtx.customAgent.IsAgentMode()
 	}
+	// Persist the resolved lending workspace, not an unverified request hint.
+	// Own agents also have a non-zero internal AgentTenantID, but sending that
+	// as a source selector would make resolveAgent skip the own-agent lookup.
+	var agentSourceTenantID uint64
+	if reqCtx.session != nil && reqCtx.effectiveTenantID != 0 &&
+		reqCtx.effectiveTenantID != reqCtx.session.TenantID {
+		agentSourceTenantID = reqCtx.effectiveTenantID
+	}
 
 	state := &types.SessionLastRequestState{
 		AgentID:             reqCtx.reqAgentID,
+		AgentSourceTenantID: agentSourceTenantID,
 		AgentEnabled:        agentEnabled,
 		ModelID:             reqCtx.summaryModelID,
 		ReasoningEffort:     reqCtx.reasoningEffort,
@@ -1947,7 +1962,17 @@ func (h *Handler) completeAssistantMessage(
 ) error {
 	assistantMessage.UpdatedAt = time.Now()
 	assistantMessage.IsCompleted = true
+	// The original streamed answer remains the source of truth. A Word file
+	// is derived before the same final write, so completion only exposes files
+	// whose metadata has been saved with the answer.
+	var generatedDocument *types.MessageArtifact
+	if userQuery != "" && assistantMessage.ExecutionContext.DocumentRequested {
+		generatedDocument = h.prepareAutomaticMessageDocument(ctx, assistantMessage)
+	}
 	if err := h.messageService.UpdateMessage(ctx, assistantMessage); err != nil {
+		if generatedDocument != nil {
+			h.discardGeneratedDocument(ctx, assistantMessage, *generatedDocument)
+		}
 		logger.Errorf(ctx, "Failed to persist assistant message %s: %v", assistantMessage.ID, err)
 		return err
 	}

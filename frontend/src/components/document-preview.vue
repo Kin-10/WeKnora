@@ -264,8 +264,40 @@ async function renderDocx(blob: Blob) {
       useBase64URL: true,
     });
     if (docxContainer.value) await indexEmbeddedSourceImages(docxContainer.value);
+    fitDocxPages();
   }
 }
+
+// docx-preview's className belongs to its SECTION pages; the outer DIV gets
+// a second "-wrapper" suffix. Keep the original page geometry and scale that
+// outer canvas, so margins, tables and fonts retain their Word proportions.
+function fitDocxPages() {
+  const root = docxContainer.value;
+  const wrapper = root?.querySelector<HTMLElement>('.docx-preview-wrapper-wrapper');
+  if (!root || !wrapper || root.clientWidth <= 0) return;
+  const pages = Array.from(wrapper.querySelectorAll<HTMLElement>('section.docx-preview-wrapper'));
+  const pageWidth = Math.max(0, ...pages.map(page => page.offsetWidth));
+  if (!pageWidth) return;
+  const canvasWidth = pageWidth + 40;
+  // CSS zoom changes both painting and scroll layout. Range rectangles used
+  // by locateDocx consequently stay aligned with the displayed text, without
+  // a transformed canvas leaving its original large scrolling footprint.
+  wrapper.style.width = `${canvasWidth}px`;
+  wrapper.style.zoom = String(Math.min(1, root.clientWidth / canvasWidth));
+}
+
+let docxResizeObserver: ResizeObserver | null = null;
+watch(docxContainer, (root) => {
+  docxResizeObserver?.disconnect();
+  docxResizeObserver = null;
+  if (!root || typeof ResizeObserver === 'undefined') return;
+  docxResizeObserver = new ResizeObserver(fitDocxPages);
+  docxResizeObserver.observe(root);
+}, { flush: 'post' });
+watch(() => [props.active, isFullscreen.value], () => {
+  void nextTick(fitDocxPages);
+}, { flush: 'post' });
+onUnmounted(() => docxResizeObserver?.disconnect());
 
 function decodeCSVBlob(arrayBuffer: ArrayBuffer): string {
   const bytes = new Uint8Array(arrayBuffer);
@@ -1521,36 +1553,11 @@ onUnmounted(() => {
   strong { font-weight: 600; }
 }
 
-:deep(.docx-preview-wrapper) {
+:deep(.docx-preview-wrapper-wrapper) {
   padding: 20px;
-  max-width: 100%;
-  width: 100%;
+  margin: 0 auto;
   box-sizing: border-box;
-  overflow-x: auto; // 如果内容过宽，允许水平滚动而不是溢出
-  
-  // 约束所有子元素的宽度
-  * {
-    max-width: 100%;
-    box-sizing: border-box;
-  }
-  
-  // 特别处理表格
-  table {
-    width: 100%;
-    table-layout: auto;
-    word-wrap: break-word;
-  }
-  
-  // 处理图片
-  img {
-    max-width: 100%;
-    height: auto;
-  }
-  
-  // 处理可能的固定宽度元素
-  [style*="width"] {
-    max-width: 100% !important;
-  }
+  background: @bg-subtle;
 }
 
 :deep(.vue-office-pptx) {
