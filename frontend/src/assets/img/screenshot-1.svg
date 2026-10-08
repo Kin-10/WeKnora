@@ -28,7 +28,11 @@
   <circle cx="90" cy="172" r="5" fill="#34D399"/>
   <circle cx="108" cy="172" r="5" fill="#6EE7B7"/>
   <circle cx="126" cy="172" r="5" fill="#A7F3D0"/>
-  <text x="400" y="177" font-family="Arial, sans-serif" font-size="12" fill="#10B981" text-anchor="middle">WeKnora &#183; Knowledge Search</text>
+  <g transform="translate(282, 160) scale(0.375)">
+    <rect width="64" height="64" rx="16" fill="#07C05F"/>
+    <path d="M13 19 22 46 32 25 42 46 51 19" fill="none" stroke="#FFFFFF" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/>
+  </g>
+  <text x="410" y="177" font-family="Arial, sans-serif" font-size="12" fill="#10B981" text-anchor="middle">WENSHU &#183; Knowledge Search</text>
 
   <g transform="translate(96, 224)">
     <rect width="608" height="52" rx="12" fill="#F0FDF4" stroke="#A7F3D0" stroke-width="1.5"/>

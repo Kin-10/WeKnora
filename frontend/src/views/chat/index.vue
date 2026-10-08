@@ -141,7 +141,17 @@
                                     @generate-document="handleGenerateDocument"
                                     @render-complete-change="(ready) => handleAnswerRenderComplete(session, ready)">
                                 </botmsg>
-                                <FollowUpSuggestions v-if="session.answerFullyRendered && !session.steerForked && !session.suggestionsDismissed"
+                                <template v-if="session !== bidGenerationInputMessage">
+                                    <ConversationInputCard v-for="request in inputRequestsFor(session)" :key="request.id"
+                                        :request="request"
+                                        :disabled="!canSubmitInputFor(session)"
+                                        :answered="messagesList.indexOf(session) < messagesList.length - 1"
+                                        @submit="(values) => handleConversationInputSubmit(session, request, values)" />
+                                    <p v-if="session.answerFullyRendered && conversationInputProblem(session.content)" class="conversation-input-notice" role="status">
+                                        {{ t('chat.conversationInput.incomplete') }}
+                                    </p>
+                                </template>
+                                <FollowUpSuggestions v-if="!bidGenerationIsWriting(bidGenerationTask) && !bidGenerationIsWaiting(bidGenerationTask) && session.answerFullyRendered && !inputRequestsFor(session).length && !session.steerForked && !session.suggestionsDismissed"
                                     :suggestion-set="session.suggestionSet"
                                     :loading="session.suggestionLoading"
                                     :allow-regenerate="session.suggestionSet?.allow_regenerate"
@@ -151,6 +161,20 @@
                                     @dismiss="(set) => dismissSuggestions(session, set)" />
                             </div>
                         </div>
+                        <BidGenerationProgress v-if="!embeddedMode && bidGenerationTask"
+                            :task="bidGenerationTask" :busy="bidGenerationControlsBlocked"
+                            @confirm="handleBidOutlineConfirm" @control="handleBidGenerationControl"
+                            @download="handleBidGenerationDownload">
+                            <template v-if="bidGenerationInputMessage" #supplement>
+                                <ConversationInputCard v-for="request in inputRequestsFor(bidGenerationInputMessage)" :key="`${bidGenerationInputMessage.id}-${request.id}`"
+                                    :request="request" :disabled="!canSubmitInputFor(bidGenerationInputMessage)"
+                                    :answered="messagesList.indexOf(bidGenerationInputMessage) < messagesList.length - 1"
+                                    @submit="(values) => handleConversationInputSubmit(bidGenerationInputMessage, request, values)" />
+                                <p v-if="bidGenerationInputMessage.answerFullyRendered && conversationInputProblem(bidGenerationInputMessage.content)" class="conversation-input-notice" role="status">
+                                    {{ t('chat.conversationInput.incomplete') }}
+                                </p>
+                            </template>
+                        </BidGenerationProgress>
                         <div v-if="showGlobalTypingIndicator" class="chat-global-wait" role="status"
                             :aria-label="t('chat.thinkingAlt')">
                             <span class="chat-global-wait__spinner" aria-hidden="true"></span>
@@ -165,6 +189,10 @@
                             <t-icon name="chevron-down" size="18px" />
                         </div>
                     </transition>
+                    <div v-if="canStartFullBid" class="bid-generation-start">
+                        <button type="button" :disabled="bidGenerationStartBusy" :title="t('chat.bidGeneration.startHint')"
+                            @click="handleStartFullBid">{{ t('chat.bidGeneration.start') }}</button>
+                    </div>
                     <InputField ref="inputFieldRef" :auto-focus="focusComposerOnMount" :compact="!embeddedMode"
                         @send-msg="(query, modelId, mentionedItems, imageFiles, attachmentFiles, options) => sendMsg(query, modelId, mentionedItems, imageFiles, attachmentFiles, options)"
                         @steer-msg="(query, mentionedItems, delivery) => handleSteerMsg(query, mentionedItems, delivery)"
@@ -252,6 +280,12 @@ import { useSessionActivityStore } from '@/stores/sessionActivity';
 import { provideChatSandboxPanel } from '@/composables/useChatSandboxPanel';
 import SandboxSidePanel from '@/components/chat/SandboxSidePanel.vue';
 import BrowserTaskPreview from './components/BrowserTaskPreview.vue';
+import ConversationInputCard from './components/ConversationInputCard.vue';
+import BidGenerationProgress from './components/BidGenerationProgress.vue';
+import { startBidGeneration, getBidGeneration, respondBidGeneration, controlBidGeneration } from '@/api/bid-generation';
+import { isFullBidGenerationQuery, isBidOutlineConfirmation, bidGenerationIsActive, bidGenerationIsWriting,
+    bidGenerationIsWaiting, bidGenerationLocksComposer, bidGenerationAcceptsMessage, bidGenerationComposerControl, bidGenerationPendingInputMessage, mergeBidGenerationMessages } from './bidGeneration';
+import { conversationInputRequests, conversationInputReply, conversationInputProblem, canSubmitConversationInput } from '@/utils/conversationInput';
 import { collectSessionArtifacts, markSessionArtifactDeleted } from '@/utils/sessionArtifacts';
 import { isCollectingSkillArtifacts } from '@/utils/skillArtifacts';
 const referencesDrawer = provideChatReferencesDrawer();
@@ -360,12 +394,154 @@ const FORK_PREFILL_KEY = 'weknora:fork-prefill'
 let forkInFlight = false
 const rewindInFlight = ref(false)
 const rewindLockSessionId = ref('')
+const bidGenerationTask = ref(null);
+const bidGenerationInputMessage = computed(() => !props.embeddedMode
+    ? bidGenerationPendingInputMessage(bidGenerationTask.value, messagesList) : null);
+const bidGenerationRequestBusy = ref(false);
+const bidGenerationStartBusy = ref(false);
+const bidArtifactDownloading = ref(false);
+const bidGenerationControlsBlocked = computed(() => bidGenerationRequestBusy.value || bidArtifactDownloading.value
+    || isReplying.value || isStreaming.value || isImRecovering.value || Boolean(documentExportInFlight.value));
+let bidTaskEpoch = 0;
+let bidPollTimer = null;
+let bidTranscriptRefreshing = false;
+let bidTranscriptRevision = '';
 const composerLocked = computed(() =>
-    rewindInFlight.value && String(session_id.value || '') === rewindLockSessionId.value
+    (rewindInFlight.value && String(session_id.value || '') === rewindLockSessionId.value)
+        || bidGenerationRequestBusy.value || bidGenerationLocksComposer(bidGenerationTask.value)
 )
+
+const bidSourceUserMessage = computed(() => [...messagesList].reverse().find(message => message.role === 'user'
+    && /标书|投标文件|\b(?:bid|tender)\b/i.test(String(message.content || ''))));
+const canStartFullBid = computed(() => !props.embeddedMode && !!bidSourceUserMessage.value
+    && !bidGenerationTask.value
+    && !bidGenerationIsActive(bidGenerationTask.value) && !continuationBlocked()
+    && !documentExportInFlight.value && !historyLoading.value);
+
+function stopBidGenerationPolling() {
+    if (bidPollTimer) clearTimeout(bidPollTimer);
+    bidPollTimer = null;
+}
+
+function scheduleBidGenerationPolling() {
+    stopBidGenerationPolling();
+    if (!bidGenerationIsWriting(bidGenerationTask.value) || props.embeddedMode) return;
+    const sid = String(session_id.value), epoch = bidTaskEpoch;
+    bidPollTimer = setTimeout(async () => {
+        bidPollTimer = null;
+        if (epoch !== bidTaskEpoch || sid !== String(session_id.value)) return;
+        await loadBidGenerationState(sid);
+    }, 2500);
+}
+
+async function refreshBidGenerationMessages(sid, epoch = bidTaskEpoch) {
+    const task = bidGenerationTask.value;
+    const res = await getMessageList({ session_id: sid, created_at: '',
+        limit: Math.max(limit.value, Math.min(100, (task?.sections?.length || 0) * 3 + 10)) });
+    if (epoch !== bidTaskEpoch || sid !== String(session_id.value) || !Array.isArray(res?.data)) return false;
+    if (task && (bidGenerationTask.value?.id !== task.id || bidGenerationTask.value?.revision !== task.revision)) return false;
+    const additions = mergeBidGenerationMessages(messagesList, res.data);
+    bidTranscriptRefreshing = true;
+    const wasFirstEnter = isFirstEnter.value;
+    isFirstEnter.value = false;
+    try {
+        if (additions.length) await handleMsgList(additions);
+    } finally { bidTranscriptRefreshing = false; isFirstEnter.value = wasFirstEnter; }
+    messagesList.sort((left, right) => (Date.parse(left.created_at) || 0) - (Date.parse(right.created_at) || 0));
+    loading.value = false;
+    historyLoading.value = false;
+    if (messagesList.length) created_at.value = messagesList[0].created_at;
+    scrollToBottom();
+    return true;
+}
+
+async function applyBidGenerationTask(task, sid, epoch, refresh = false) {
+    if (epoch !== bidTaskEpoch || sid !== String(session_id.value)) return;
+    if (task && (task.session_id !== sid || !Array.isArray(task.sections) || !Number.isInteger(task.revision))) {
+        throw new Error('Invalid bid task response');
+    }
+    const previous = bidGenerationTask.value;
+    if (previous && task && previous.id === task.id && previous.revision > task.revision) return;
+    bidGenerationTask.value = task;
+    activitySessionId.value = sid;
+    const transcriptRevision = task ? `${task.id}:${task.revision}` : '';
+    if (task && (refresh || bidTranscriptRevision !== transcriptRevision)) {
+        if (await refreshBidGenerationMessages(sid, epoch)) bidTranscriptRevision = transcriptRevision;
+    }
+}
+
+async function loadBidGenerationState(sid = String(session_id.value), refresh = false) {
+    if (!sid || props.embeddedMode) return;
+    const epoch = bidTaskEpoch;
+    try {
+        const res = await getBidGeneration(sid);
+        if (res?.success) await applyBidGenerationTask(res.data, sid, epoch, refresh);
+    } catch (error) {
+        console.warn('[BidGeneration] Failed to refresh task:', error);
+    } finally {
+        if (epoch === bidTaskEpoch && sid === String(session_id.value)) scheduleBidGenerationPolling();
+    }
+}
+
+function bidGenerationActionError(error) {
+    const status = error?.$httpStatus || error?.response?.status;
+    MessagePlugin.error(status === 409 ? t('chat.bidGeneration.stale')
+        : error?.message || error?.error?.message || t('chat.bidGeneration.failed'));
+}
+
+async function handleStartFullBid() {
+    if (!canStartFullBid.value || bidGenerationStartBusy.value) return;
+    const source = bidSourceUserMessage.value;
+    const sid = String(session_id.value), epoch = bidTaskEpoch;
+    const tailId = messagesList.at(-1)?.id;
+    bidGenerationStartBusy.value = true;
+    try {
+        const state = (await getSession(sid))?.data?.last_request_state;
+        if (epoch !== bidTaskEpoch || !canStartFullBid.value || messagesList.at(-1)?.id !== tailId) return;
+        await sendMsg(String(source.content), state?.model_id || '', state?.mentioned_items || source.mentioned_items || [], [],
+            continuationAttachments(source), { requestState: state || undefined, bidGeneration: true });
+    } catch (error) {
+        if (epoch === bidTaskEpoch) bidGenerationActionError(error);
+    } finally { if (epoch === bidTaskEpoch) bidGenerationStartBusy.value = false; }
+}
+
+async function handleBidOutlineConfirm() {
+    if (bidGenerationTask.value?.status !== 'awaiting_outline' || bidGenerationRequestBusy.value) return;
+    await sendMsg(t('chat.bidGeneration.confirmQuery'), '', [], [], [], { confirmOutline: true });
+}
+
+async function handleBidGenerationControl(action) {
+    const task = bidGenerationTask.value;
+    if (!task || bidGenerationControlsBlocked.value) return;
+    const sid = String(session_id.value), epoch = bidTaskEpoch;
+    bidGenerationRequestBusy.value = true;
+    stopBidGenerationPolling();
+    try {
+        const res = await controlBidGeneration(sid, task.id, { action, expected_revision: task.revision });
+        if (!res?.success) throw new Error(t('chat.bidGeneration.failed'));
+        await applyBidGenerationTask(res.data, sid, epoch, true);
+    } catch (error) {
+        if (epoch === bidTaskEpoch) { bidGenerationActionError(error); await loadBidGenerationState(sid, true); }
+    } finally {
+        if (epoch === bidTaskEpoch) { bidGenerationRequestBusy.value = false; scheduleBidGenerationPolling(); }
+    }
+}
+
+async function handleBidGenerationDownload() {
+    const task = bidGenerationTask.value;
+    if (task?.status !== 'completed' || !task.artifact_message_id || !Number.isInteger(task.artifact_index) || bidArtifactDownloading.value) return;
+    const sid = String(session_id.value), epoch = bidTaskEpoch;
+    bidArtifactDownloading.value = true;
+    try {
+        const blob = await downloadArtifact(sid, task.artifact_message_id, task.artifact_index);
+        if (epoch === bidTaskEpoch && sid === String(session_id.value)) downloadAnswerDocument(blob, task.artifact_file_name || '标书.docx');
+    } catch (error) { if (epoch === bidTaskEpoch) bidGenerationActionError(error); }
+    finally { if (epoch === bidTaskEpoch) bidArtifactDownloading.value = false; }
+}
 const documentExportInFlight = ref(null);
 const documentExportBlocked = () => Boolean(composerLocked.value || forkInFlight
-    || isReplying.value || isStreaming.value || isImRecovering.value);
+    || isReplying.value || isStreaming.value || isImRecovering.value
+    || bidGenerationIsWaiting(bidGenerationTask.value));
 
 function canGenerateDocument(message) {
     return canGenerateAnswerDocument(message, {
@@ -422,14 +598,14 @@ const continuationBlocked = () => Boolean(composerLocked.value || forkInFlight
     || isReplying.value || isStreaming.value || isImRecovering.value);
 const continuableMessageId = computed(() => continuableAnswerId(messagesList, {
     embeddedMode: props.embeddedMode,
-    outgoingWork: continuationInFlight.value || continuationBlocked(),
+    outgoingWork: continuationInFlight.value || continuationBlocked() || bidGenerationIsWaiting(bidGenerationTask.value),
 }));
 
 async function handleContinueAnswer(messageId) {
     if (continuationInFlight.value || !session_id.value) return;
     const source = messagesList.at(-1);
     const eligible = () => source && continuableAnswerId(messagesList, {
-        embeddedMode: props.embeddedMode, outgoingWork: continuationBlocked(),
+        embeddedMode: props.embeddedMode, outgoingWork: continuationBlocked() || bidGenerationIsWaiting(bidGenerationTask.value),
     }) === String(source.id || '')
         && (persistedAssistantId(source) === messageId || source.id === messageId);
     if (!eligible()) return;
@@ -455,6 +631,51 @@ async function handleContinueAnswer(messageId) {
         if (String(session_id.value) === sourceSessionId) MessagePlugin.error(t('chat.continueAnswerFailed'));
     } finally {
         continuationInFlight.value = false;
+    }
+}
+
+const conversationInputInFlight = ref(false);
+const inputRequestsFor = (message) => message.is_completed && message.answerFullyRendered && !message.steerForked
+    ? conversationInputRequests(message.content) : [];
+const canSubmitInputFor = (message) => {
+    const task = bidGenerationTask.value;
+    const id = persistedAssistantId(message);
+    const taskBlocksCard = bidGenerationIsWaiting(task) ? !bidGenerationAcceptsMessage(task, id)
+        : ['paused', 'failed'].includes(task?.status) && task?.pending_message_id === id;
+    return !taskBlocksCard && message.answerFullyRendered && canSubmitConversationInput(message, messagesList,
+        conversationInputInFlight.value || continuationBlocked() || Boolean(documentExportInFlight.value));
+};
+
+async function handleConversationInputSubmit(source, request, values) {
+    if (!canSubmitInputFor(source) || !session_id.value) return;
+    const sourceSessionId = String(session_id.value);
+    const eligible = () => String(session_id.value) === sourceSessionId
+        && canSubmitConversationInput(source, messagesList,
+            continuationBlocked() || Boolean(documentExportInFlight.value));
+    const reply = conversationInputReply(request, values,
+        t('chat.conversationInput.replyIntro', { title: request.title }), t('chat.conversationInput.replyContinue'));
+    if (!reply) { MessagePlugin.warning(t('chat.conversationInput.invalid')); return; }
+    if (bidGenerationAcceptsMessage(bidGenerationTask.value, persistedAssistantId(source))) {
+        conversationInputInFlight.value = true;
+        try { await sendMsg(reply); }
+        finally { conversationInputInFlight.value = false; }
+        return;
+    }
+    const userMessage = continuationUserMessage(messagesList, String(source.id));
+    conversationInputInFlight.value = true;
+    try {
+        let state = messageContinuationState(source, sourceSessionId);
+        if (!state) state = (await getSession(sourceSessionId))?.data?.last_request_state;
+        // A different send or navigation while settings load supersedes this card.
+        if (!eligible()) return;
+        const requestState = resolveAnswerContinuationState(source, state, userMessage);
+        if (!requestState) throw new Error('Original answer settings unavailable');
+        await sendMsg(reply, requestState.model_id, requestState.mentioned_items || [], [],
+            continuationAttachments(userMessage), { requestState });
+    } catch {
+        if (String(session_id.value) === sourceSessionId) MessagePlugin.error(t('chat.conversationInput.sendFailed'));
+    } finally {
+        conversationInputInFlight.value = false;
     }
 }
 
@@ -664,7 +885,7 @@ let recoverPollTimer = null;
 // isn't a silent gap. IM-only: false everywhere else, so other flows are unchanged.
 const isImRecovering = ref(false);
 const outgoingWorkBlocksRewind = computed(() => rewindBlockedByOutgoingWork({
-    isReplying: isReplying.value,
+    isReplying: isReplying.value || bidGenerationIsActive(bidGenerationTask.value) || bidGenerationRequestBusy.value,
     isStreaming: isStreaming.value,
     isRecovering: isImRecovering.value,
 }))
@@ -673,11 +894,12 @@ const isFirstEnter = ref(true);
 const loading = ref(false);
 const sessionActivity = useSessionActivityStore();
 const activitySessionId = ref('');
-watch([activitySessionId, isReplying, isImRecovering, currentAssistantMessageId], () => {
+watch([activitySessionId, isReplying, isImRecovering, currentAssistantMessageId, bidGenerationTask], () => {
     if (props.embeddedMode || !activitySessionId.value) return;
     // SSE may stay connected after a stop/complete event. The sidebar tracks
     // generation, not the transport, just like the composer's Stop button.
-    sessionActivity.update(activitySessionId.value, isReplying.value || isImRecovering.value, currentAssistantMessageId.value);
+    sessionActivity.update(activitySessionId.value, isReplying.value || isImRecovering.value
+        || bidGenerationIsWriting(bidGenerationTask.value), currentAssistantMessageId.value);
 }, { flush: 'sync' });
 const historyLoading = ref(true);
 const historyLoadingMore = ref(false);
@@ -926,6 +1148,8 @@ watch([() => route.params], async (newvalue) => {
         useSettingsStoreInstance.restoreDefaultsIfSnapshotted();
 
         await loadSessionAndHydrate(session_id.value);
+        await loadBidGenerationState(String(session_id.value));
+        if (messagesList.length) { historyLoading.value = false; return; }
         let data = {
             session_id: session_id.value,
             created_at: '',
@@ -1043,6 +1267,8 @@ const {
     debug: import.meta.env.DEV,
     onAfterMsgList: async () => {
         activitySessionId.value = String(session_id.value);
+        // Bid workers persist complete messages and do not expose an SSE turn.
+        if (bidTranscriptRefreshing || bidGenerationIsWriting(bidGenerationTask.value) || bidGenerationIsWaiting(bidGenerationTask.value)) return;
         for (const message of messagesList) {
             if (message.role === 'assistant' && message.is_completed && message.suggestionSet === undefined) {
                 void loadFollowUpSuggestions(message, false);
@@ -1477,6 +1703,21 @@ const attachSteerFollowUp = async (completedAssistantId) => {
 
 const sendMsg = async (value, modelId = '', mentionedItems = [], imageFiles = [], attachmentFiles = [], options = {}) => {
     if (composerLocked.value) return
+    const bidControl = !props.embeddedMode && bidGenerationComposerControl(bidGenerationTask.value, value);
+    if (bidControl && !imageFiles.length && !attachmentFiles.length && !mentionedItems.length) {
+        await handleBidGenerationControl(bidControl);
+        return;
+    }
+    const fullBidIntent = !props.embeddedMode && (options?.bidGeneration || isFullBidGenerationQuery(value));
+    if (fullBidIntent && ['paused', 'failed'].includes(bidGenerationTask.value?.status)) {
+        MessagePlugin.warning(t('chat.bidGeneration.existingTask'));
+        return;
+    }
+    const bidResponseTask = !props.embeddedMode && bidGenerationIsWaiting(bidGenerationTask.value)
+        ? bidGenerationTask.value : null;
+    const bidAction = bidResponseTask ? 'respond' : fullBidIntent ? 'start' : '';
+    const requestSessionId = String(session_id.value), requestBidEpoch = bidTaskEpoch;
+    if (bidAction) { bidGenerationRequestBusy.value = true; stopBidGenerationPolling(); }
     const requestState = options?.requestState;
     const agentEnabled = requestState ? requestState.agent_enabled : (props.embeddedMode
         ? Boolean(props.agentId && props.agentId !== 'builtin-quick-answer')
@@ -1484,11 +1725,10 @@ const sendMsg = async (value, modelId = '', mentionedItems = [], imageFiles = []
     const reasoningEffort = requestState ? requestState.reasoning_effort : (props.embeddedMode
         ? undefined : (useSettingsStoreInstance.reasoningEffortOverride || undefined));
     activeStreamAgentMode.value = agentEnabled;
-    stopStream();
-    prepareForNewOutgoingMessage();
+    if (!bidAction) { stopStream(); prepareForNewOutgoingMessage(); }
     activitySessionId.value = String(session_id.value);
-    isReplying.value = true;
-    loading.value = true;
+    isReplying.value = !bidAction;
+    loading.value = !bidAction;
     const selectedAgentId = requestState ? requestState.agent_id : (props.embeddedMode
         ? props.agentId : (useSettingsStoreInstance.selectedAgentId || ''));
     const selectedAgentSourceTenantId = requestState ? requestState.agent_source_tenant_id : (props.embeddedMode
@@ -1512,6 +1752,7 @@ const sendMsg = async (value, modelId = '', mentionedItems = [], imageFiles = []
                 console.error('[Image] Failed to read images:', e);
                 loading.value = false;
                 isReplying.value = false;
+                if (requestBidEpoch === bidTaskEpoch) bidGenerationRequestBusy.value = false;
                 return;
             }
             userImages.push({ url: dataURI });
@@ -1521,10 +1762,14 @@ const sendMsg = async (value, modelId = '', mentionedItems = [], imageFiles = []
             }
             try {
                 const upload = await uploadTemporaryAttachment(
-                    session_id.value, file, selectedAgentId, selectedAgentSourceTenantId, 'auto'
+                    requestSessionId, file, selectedAgentId, selectedAgentSourceTenantId, 'auto'
                 );
                 imageAttachmentIds.push(upload.data.id);
             } catch (e) {
+                if (bidAction) {
+                    if (requestBidEpoch === bidTaskEpoch) { bidGenerationRequestBusy.value = false; bidGenerationActionError(e); }
+                    return;
+                }
                 console.error('[Image] Temporary image upload failed, falling back to inline:', e);
                 imageAttachments.push({ data: dataURI });
             }
@@ -1542,7 +1787,7 @@ const sendMsg = async (value, modelId = '', mentionedItems = [], imageFiles = []
             await Promise.all(localAttachments.map(async (attachment) => {
                 attachment.status = 'uploading';
                 const upload = await uploadTemporaryAttachment(
-                    session_id.value, attachment.file, selectedAgentId, selectedAgentSourceTenantId, 'auto'
+                    requestSessionId, attachment.file, selectedAgentId, selectedAgentSourceTenantId, 'auto'
                 );
                 attachment.documentId = upload.data.id;
                 attachment.status = upload.data.status;
@@ -1551,10 +1796,11 @@ const sendMsg = async (value, modelId = '', mentionedItems = [], imageFiles = []
             console.error('[Attachment] Temporary document upload failed:', error);
             await Promise.all(localAttachments
                 .filter(attachment => attachment.documentId)
-                .map(attachment => deleteTemporaryAttachment(session_id.value, attachment.documentId).catch(() => undefined)));
+                .map(attachment => deleteTemporaryAttachment(requestSessionId, attachment.documentId).catch(() => undefined)));
             MessagePlugin.error(error?.message || t('chat.attachmentParseFailed'));
             loading.value = false;
             isReplying.value = false;
+            if (requestBidEpoch === bidTaskEpoch) bidGenerationRequestBusy.value = false;
             return;
         }
     }
@@ -1601,7 +1847,7 @@ const sendMsg = async (value, modelId = '', mentionedItems = [], imageFiles = []
     }
 
     // 将@提及的知识库和文件信息存入用户消息
-    messagesList.push({ content: value, role: 'user', mentioned_items: mentionedItems, images: userImages, attachments: attachmentFiles.map(a => ({ id: a.documentId, file_name: a.name, file_size: a.size, file_type: '.' + a.name.split('.').pop()?.toLowerCase() })), channel: 'web', created_at: new Date().toISOString() });
+    if (!bidAction) messagesList.push({ content: value, role: 'user', mentioned_items: mentionedItems, images: userImages, attachments: attachmentFiles.map(a => ({ id: a.documentId, file_name: a.name, file_size: a.size, file_type: '.' + a.name.split('.').pop()?.toLowerCase() })), channel: 'web', created_at: new Date().toISOString() });
     userHasScrolledUp.value = false;
     scrollToBottom(true);
 
@@ -1642,8 +1888,8 @@ const sendMsg = async (value, modelId = '', mentionedItems = [], imageFiles = []
     const suggestionAttribution = requestState ? null : pendingSuggestionAttribution;
     pendingSuggestionAttribution = null;
     pendingSuggestionKnowledgeBaseIds = [];
-    await startStream({
-        session_id: session_id.value,
+    const outgoingRequest = {
+        session_id: requestSessionId,
         knowledge_base_ids: kbIds,
         knowledge_ids: knowledgeIds,
         agent_enabled: agentEnabled,
@@ -1668,7 +1914,43 @@ const sendMsg = async (value, modelId = '', mentionedItems = [], imageFiles = []
         continuation_of_message_id: options?.continuationOfMessageId,
         method: 'POST',
         url: endpoint,
-    });
+    };
+    if (bidAction) {
+        if (requestBidEpoch !== bidTaskEpoch || requestSessionId !== String(session_id.value)) return;
+        try {
+            const res = bidAction === 'respond'
+                ? await respondBidGeneration(requestSessionId, bidResponseTask.id, {
+                    query: value,
+                    confirm_outline: bidResponseTask.status === 'awaiting_outline'
+                        && Boolean(options?.confirmOutline || isBidOutlineConfirmation(value)),
+                    attachment_ids: attachmentIds.length ? attachmentIds : undefined,
+                    expected_revision: bidResponseTask.revision,
+                })
+                : await startBidGeneration(requestSessionId, {
+                    query: value,
+                    request_state: { ...outgoingRequest, model_id: modelId },
+                    attachment_ids: attachmentIds.length ? attachmentIds : undefined,
+                });
+            if (!res?.success) throw new Error(t('chat.bidGeneration.failed'));
+            await applyBidGenerationTask(res.data, requestSessionId, requestBidEpoch, true);
+            if (requestBidEpoch === bidTaskEpoch && res.data?.title) {
+                usemenuStore.updatasessionTitle(requestSessionId, res.data.title);
+                notifySessionMutation({ sessionId: requestSessionId, patch: { title: res.data.title } });
+            }
+        } catch (error) {
+            if (requestBidEpoch === bidTaskEpoch) {
+                bidGenerationActionError(error);
+                await loadBidGenerationState(requestSessionId, true);
+            }
+        } finally {
+            if (requestBidEpoch === bidTaskEpoch) {
+                bidGenerationRequestBusy.value = false;
+                scheduleBidGenerationPolling();
+            }
+        }
+        return;
+    }
+    await startStream(outgoingRequest);
 }
 
 // Quietly recover an in-flight IM reply we couldn't attach to (it's generated on
@@ -1820,6 +2102,8 @@ onMounted(async () => {
         scrollLock.value = false;
         hasMoreHistory.value = true;
         historyLoadingMore.value = false;
+        await loadBidGenerationState(String(session_id.value));
+        if (messagesList.length) { historyLoading.value = false; return; }
         let data = {
             session_id: session_id.value,
             created_at: '',
@@ -1829,6 +2113,14 @@ onMounted(async () => {
     }
 })
 const clearData = () => {
+    bidTaskEpoch++;
+    stopBidGenerationPolling();
+    bidGenerationTask.value = null;
+    bidGenerationRequestBusy.value = false;
+    bidGenerationStartBusy.value = false;
+    bidArtifactDownloading.value = false;
+    bidTranscriptRefreshing = false;
+    bidTranscriptRevision = '';
     if (!props.embeddedMode) sessionActivity.detach(activitySessionId.value);
     activitySessionId.value = '';
     stopStream();
@@ -1840,6 +2132,8 @@ const clearData = () => {
     isImRecovering.value = false;
 }
 onUnmounted(() => {
+    bidTaskEpoch++;
+    stopBidGenerationPolling();
     if (!props.embeddedMode) sessionActivity.detach(activitySessionId.value);
     activitySessionId.value = '';
     window.removeEventListener(SESSION_MUTATION_EVENT, handleSessionMutation);
@@ -1859,6 +2153,14 @@ onBeforeRouteUpdate((to, from, next) => {
 })
 </script>
 <style lang="less" scoped>
+.bid-generation-start {
+    display: flex;
+    justify-content: flex-end;
+    margin-bottom: 8px;
+    button { border: 1px solid var(--td-component-border, #d1d5db); border-radius: 8px; padding: 6px 12px; background: var(--td-bg-color-container, #fff); color: var(--td-brand-color, #07a35a); font: inherit; font-size: 12px; cursor: pointer; }
+    button:disabled { opacity: .5; cursor: not-allowed; }
+    button:focus-visible { outline: 2px solid var(--td-brand-color, #07a35a); outline-offset: 2px; }
+}
 .chat {
     // 水平方向不留 padding，让滚动条贴到内容区最右缘；
     // 消息列与输入列各自用 --chat-content-inset 做左右对称的留白（窄屏时才可见）。
@@ -2218,6 +2520,13 @@ onBeforeRouteUpdate((to, from, next) => {
         flex-direction: column;
         width: 100%;
 
+    }
+
+    .conversation-input-notice {
+        margin: 12px 0;
+        color: var(--td-text-color-secondary);
+        font-size: 13px;
+        line-height: 1.7;
     }
 
     .botanswer_laoding_gif {

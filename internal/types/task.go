@@ -4,6 +4,7 @@ package types
 // backed by an independent asynq.Server, so concurrency is hard-isolated
 // between pools instead of being only a weighted dequeue preference.
 const (
+	TypeBidGeneration     = "bid:generation"
 	WorkerPoolCore        = "core"
 	WorkerPoolPostProcess = "postprocess"
 	WorkerPoolEnrichment  = "enrichment"
@@ -63,6 +64,7 @@ type QueueDefinition struct {
 var queueDefinitions = []QueueDefinition{
 	{Name: QueueDefault, Pool: WorkerPoolCore, Weight: 1, SharedWeight: 3, TaskTypes: []string{
 		TypeDocumentProcess, TypeManualProcess,
+		TypeBidGeneration,
 	}},
 	// Interactive chat attachment parsing: higher core weight than the default
 	// queue so a large KB import cannot make chat uploads queue behind it.

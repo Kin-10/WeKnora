@@ -871,6 +871,17 @@
         </div>
 
         <div class="settings-group">
+          <div class="setting-row">
+            <div class="setting-info">
+              <label>{{ $t('agent.editor.userInputEnabled') }}</label>
+              <p class="desc">{{ $t('agent.editor.userInputEnabledDesc') }}</p>
+            </div>
+            <div class="setting-control">
+              <t-switch v-model="formData.config.user_input_enabled"
+                :aria-label="$t('agent.editor.userInputEnabled')" />
+            </div>
+          </div>
+
           <!-- 多轮对话开关（仅普通模式：Agent 模式由 EnsureDefaults 强制开启，
                展示可关闭的开关只会被服务端改回去） -->
           <div v-if="!isAgentMode" class="setting-row">
@@ -2859,6 +2870,7 @@ const defaultFormData = {
     // 多轮对话设置
     multi_turn_enabled: false,
     history_turns: 5,
+    user_input_enabled: false,
     retain_retrieval_history: false,
     // 长期记忆：默认跟随空间设置。写 true 与不写等价，只有 false 才会
     // 让这个智能体单独不读记忆。
@@ -3526,6 +3538,8 @@ watch(() => props.visible, async (val) => {
 
       // 补全可能缺失的字段
       agentData.config = { ...defaultFormData.config, ...agentData.config };
+      // 信息补充卡片需显式启用，旧配置和空值保持关闭。
+      agentData.config.user_input_enabled = agentData.config.user_input_enabled === true;
       if (agentData.config.thinking == null) {
         agentData.config.thinking = false;
       }

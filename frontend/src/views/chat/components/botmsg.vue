@@ -130,7 +130,7 @@
                     @click.stop="emitGenerateDocument" :title="t('chat.generateWordHint')">
                     <t-icon v-if="!documentGenerating" name="file-word" />{{ t('chat.generateWord') }}
                 </t-button>
-                <DocumentFormattingNotice v-if="!session.steerForked" :value="session.document_formatting" />
+                <DocumentFormattingNotice v-if="!session.steerForked && !awaitingConversationInput" :value="session.document_formatting" />
                 <ChatRequestInfoButton v-if="showRequestInfo" :session="session" :session-id="sessionId" />
                 <transition name="follow-up-toolbar-loading">
                     <span v-if="followUpLoading" class="answer-toolbar__follow-up-loading" role="status"
@@ -205,6 +205,7 @@ import { useChatCitationPopover } from '@/composables/useChatCitationPopover';
 import { useTypewriter } from '@/composables/useTypewriter';
 import { vStableHtml } from '@/directives/stableHtml';
 import { SKILL_ICON } from '@/types/mention';
+import { conversationInputMarkdown, conversationInputRequests, conversationInputProblem } from '@/utils/conversationInput';
 
 ensureMermaidInitialized();
 
@@ -419,8 +420,10 @@ const mentionedItems = computed(() => {
 // Agent path). Copy/toolbar still read the full content; only display is paced.
 const answerText = computed(() => {
     const text = props.content || props.session?.content || '';
-    return typeof text === 'string' ? text : '';
+    return conversationInputMarkdown(text, !props.session?.is_completed);
 });
+const awaitingConversationInput = computed(() => conversationInputRequests(props.content || props.session?.content).length > 0
+    || conversationInputProblem(props.content || props.session?.content));
 const { displayed: typedAnswer } = useTypewriter(
     () => answerText.value,
     () => Boolean(props.session?.is_completed),
@@ -475,7 +478,7 @@ const hasActualContent = computed(() => {
 
 // 获取实际内容
 const getActualContent = () => {
-    return (props.content || props.session?.content || '').trim();
+    return conversationInputMarkdown(props.content || props.session?.content || '').trim();
 };
 
 // 复制回答内容

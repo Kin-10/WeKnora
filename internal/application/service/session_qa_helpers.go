@@ -250,6 +250,7 @@ func (s *sessionService) applyAgentOverridesToChatManage(
 	cm.SummaryConfig.Thinking = customAgent.Config.Thinking
 	cm.SummaryConfig.ReasoningEffort = customAgent.Config.ReasoningEffort
 	cm.CitationEnabled = customAgent.Config.CitationEnabled
+	cm.UserInputEnabled = customAgent.Config.UserInputEnabled
 	if customAgent.Config.Thinking != nil {
 		logger.Infof(ctx, "Using custom agent's thinking: %v", *customAgent.Config.Thinking)
 	} else {

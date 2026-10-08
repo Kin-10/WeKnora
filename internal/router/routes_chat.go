@@ -108,6 +108,10 @@ func RegisterSessionRoutes(
 		// read the URL param via c.Param("session_id") with a fallback to
 		// c.Param("id") for exactly this reason.
 		sessions.GET("/:id/artifacts", handler.ListSessionArtifacts)
+		sessions.GET("/:id/bid-generation", handler.GetBidGeneration)
+		sessions.POST("/:session_id/bid-generation", handler.StartBidGeneration)
+		sessions.POST("/:session_id/bid-generation/:task_id/respond", handler.RespondBidGeneration)
+		sessions.POST("/:session_id/bid-generation/:task_id/control", handler.ControlBidGeneration)
 		sessions.GET("/:id/messages/:message_id/artifacts", handler.ListMessageArtifacts)
 		sessions.GET("/:id/messages/:message_id/artifacts/:index/download", handler.DownloadMessageArtifact)
 		// Deleting reclaims the stored bytes, so it is owner-only: unlike the

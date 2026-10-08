@@ -1,4 +1,6 @@
 import type { SessionLastRequestStatePayload } from '@/stores/settings'
+import { conversationInputRequests, conversationInputProblem } from '../../utils/conversationInput'
+import { hasCompleteBidDocument } from './bidGeneration'
 
 type Message = Record<string, any>
 
@@ -13,7 +15,9 @@ export function continuableAnswerId(
   if (messages.some(message => message.role === 'assistant' && !message.is_completed)) return ''
   const last = messages.at(-1)
   if (!last || last.role !== 'assistant' || !last.is_completed || last.persistence_error
-      || last.steerForked || !String(last.content || '').trim()) return ''
+      || last.steerForked || !String(last.content || '').trim()
+      || conversationInputRequests(last.content).length || conversationInputProblem(last.content)
+      || hasCompleteBidDocument(last)) return ''
   return String(last.id || '')
 }
 

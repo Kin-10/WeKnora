@@ -7,6 +7,7 @@ import { collectSessionArtifacts } from '../../utils/sessionArtifacts.ts'
 import { persistedAssistantId } from '../../utils/steerStreamFork.ts'
 import { canGenerateAnswerDocument, updateAnswerDocumentArtifacts } from './answerDocument.ts'
 import { readDocumentFormatting, documentFormattingSuccess } from '../../utils/documentFormatting.ts'
+import { bidGenerationIsWaiting } from './bidGeneration'
 
 test('only completed, persisted text answers offer document generation', () => {
   const answer = { id: 'answer', role: 'assistant', content: '# 标书', is_completed: true }
@@ -36,6 +37,14 @@ test('document metadata preserves deleted artifact indices and other generated f
   assert.equal(!!answer.artifacts[1].deleted_at, true)
 })
 
+test('a complete job Word artifact cannot be replaced by exporting the final summary as another document', () => {
+  const summary = { id: 'summary', role: 'assistant', is_completed: true, content: '完整标书已生成。', artifacts: [
+    { source_path: 'generated-documents/bid-task/task-id/完整标书.docx' },
+  ] }
+  assert.equal(canGenerateAnswerDocument(summary), false)
+  assert.equal(canGenerateAnswerDocument({ ...summary, artifacts: [{ source_path: 'generated-documents/message-id/草稿.docx' }] }), true)
+})
+
 // Execute the production parent handler with transport/download boundaries mocked.
 const source = readFileSync(new URL('./index.vue', import.meta.url), 'utf8')
 const handler = source.slice(source.indexOf('const documentExportInFlight ='), source.indexOf('const continuationInFlight ='))
@@ -53,6 +62,7 @@ function harness(overrides: Record<string, any> = {}) {
     readDocumentFormatting, documentFormattingSuccess,
     composerLocked: ref(false), forkInFlight: false, isReplying: ref(false), isStreaming: ref(false),
     isImRecovering: ref(false), props: { embeddedMode: false }, session_id: ref('original-session'),
+    bidGenerationTask: ref(null), bidGenerationIsWaiting,
     messagesList: reactive([answer]),
     generateMessageDocument: async (...args: any[]) => {
       generation.push(args)

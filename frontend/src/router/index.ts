@@ -132,6 +132,12 @@ const router = createRouter({
           },
         },
         {
+          path: "bid-opportunities",
+          name: "bidOpportunities",
+          component: () => import("../views/bid-opportunities/BidOpportunities.vue"),
+          meta: { requiresInit: true, requiresAuth: true }
+        },
+        {
           path: "artifacts",
           name: "artifactLibrary",
           component: () => import("../views/artifacts/ArtifactLibrary.vue"),

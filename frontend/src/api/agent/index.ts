@@ -113,6 +113,7 @@ export interface CustomAgentConfig {
   // ===== 多轮对话设置 =====
   multi_turn_enabled?: boolean;     // 是否启用多轮对话
   history_turns?: number;           // 保留历史轮数
+  user_input_enabled?: boolean;     // 是否在对话中展示信息补充卡片（默认: false，两种模式均适用）
 
   // ===== 长期记忆 =====
   // 该智能体是否可以读取用户的长期记忆。

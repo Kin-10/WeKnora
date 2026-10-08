@@ -407,6 +407,7 @@ type BuildSystemPromptOptions struct {
 	SkillsMetadata   []*skills.SkillMetadata
 	ShellExecEnabled bool
 	SkillInstallMode bool
+	UserInputEnabled bool
 	Language         string         // User language name for {{language}} placeholder (e.g. "Chinese (Simplified)")
 	Config           *config.Config // Config for reading prompt templates; nil leaves the default base empty
 	MemoryPrompt     string
@@ -515,6 +516,9 @@ func BuildSystemPromptSections(
 		SystemPromptSection{"tools", formatToolGuidanceForMode(names, skillInstallMode, layout)},
 		SystemPromptSection{"output", types.SourcedAnswerOutputPrompt})
 	if options != nil {
+		if options.UserInputEnabled {
+			sections = append(sections, SystemPromptSection{"user_input", types.ConversationalUserInputPrompt})
+		}
 		if !skillInstallMode && slices.Contains(names, "read_file") && len(options.SkillsMetadata) > 0 {
 			sections = append(sections, SystemPromptSection{
 				"skills", formatSkillsMetadata(options.SkillsMetadata, options.ShellExecEnabled),

@@ -338,6 +338,7 @@ func (s *sessionService) buildAgentConfig(
 		Thinking:                    customAgent.Config.Thinking,
 		ReasoningEffort:             customAgent.Config.ReasoningEffort,
 		CitationEnabled:             customAgent.Config.CitationEnabled,
+		UserInputEnabled:            customAgent.Config.UserInputEnabled,
 		RetrieveKBOnlyWhenMentioned: customAgent.Config.RetrieveKBOnlyWhenMentioned,
 		LLMCallTimeout:              customAgent.Config.LLMCallTimeout,
 		MaxCompletionTokens:         customAgent.Config.MaxCompletionTokens,

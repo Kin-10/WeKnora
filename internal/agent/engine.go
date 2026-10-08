@@ -165,6 +165,7 @@ func (e *AgentEngine) systemPromptOptions(ctx context.Context) *BuildSystemPromp
 		Language:         types.LanguageNameFromContext(ctx),
 		Config:           e.appConfig,
 		SkillInstallMode: e.config.SkillInstallMode(),
+		UserInputEnabled: e.config.UserInputEnabled,
 		MemoryPrompt:     e.memoryPrompt,
 		ProtocolPrompt:   e.modelContext.ProtocolPrompt(),
 		WorkspaceLayout:  e.workspaceLayout,
@@ -803,7 +804,8 @@ func (e *AgentEngine) runReActIteration(
 	// the window. Compacting and retrying once turns that into a recovered
 	// round instead of a wasted one. Once per turn: if the retry overflows
 	// too, the problem is not the history size.
-	if !e.overflowRecovered && e.responseHitContextLimit(resp) {
+	awaitingUserInput := e.config.UserInputEnabled && types.HasUserInputRequest(resp.Content)
+	if !awaitingUserInput && !e.overflowRecovered && e.responseHitContextLimit(resp) {
 		e.overflowRecovered = true
 		logger.Warnf(ctx, "[Agent][Round-%d] Response hit the context window (finish=%s, "+
 			"completion=%d of %d requested); compacting and retrying once",
@@ -820,6 +822,7 @@ func (e *AgentEngine) runReActIteration(
 		}
 	}
 	response = resp
+	awaitingUserInput = e.config.UserInputEnabled && types.HasUserInputRequest(response.Content)
 	e.logContextDrift(ctx, round, currentTokens, response.Usage)
 	// Calibration needs only a prompt count; some providers report no total.
 	e.calibrateEstimator(ctx, round, *messagesPtr, tools, response.Usage, state)
@@ -832,6 +835,41 @@ func (e *AgentEngine) runReActIteration(
 			response.Usage.CompletionTokens, response.Usage.TotalTokens,
 			response.Usage.CacheReadTokens, response.Usage.CacheWriteTokens,
 			response.Usage.PromptCacheHitRate(), response.Usage.CacheStatus)
+	}
+
+	// A clarification card is a terminal response, even if the provider also
+	// requested tools or cut the card off. Waiting for the user must take
+	// precedence over tool execution, automatic overflow recovery and the
+	// loop-end steer drain; prompt instructions alone cannot enforce this.
+	if awaitingUserInput && ctx.Err() == nil {
+		step := types.AgentStep{
+			UserMessagesBefore: state.PendingSteerMessages,
+			Iteration:          state.CurrentRound,
+			Thought:            response.Content,
+			ReasoningContent:   response.ReasoningContent,
+			ReasoningSignature: response.ReasoningSignature,
+			ReasoningMetadata:  response.ReasoningMetadata,
+			ToolCalls:          make([]types.ToolCall, 0),
+			Timestamp:          time.Now(),
+			Truncated:          isLengthFinishReason(response.FinishReason),
+		}
+		state.PendingSteerMessages = nil
+		// Providers can announce pending calls while streaming. Resolve those
+		// notifications without executing or recording them as performed work.
+		for i, call := range response.ToolCalls {
+			id := agenttools.NormalizeToolCallID(call.ID, call.Function.Name, i)
+			_ = e.eventBus.Emit(ctx, event.Event{
+				ID: id + "-tool-result", Type: event.EventAgentToolResult, SessionID: sessionID,
+				Data: event.AgentToolResultData{ToolCallID: id, ToolName: call.Function.Name,
+					Iteration: state.CurrentRound, Success: false,
+					Error: "Tool call was not executed: waiting for the user's requested information."},
+			})
+		}
+		state.RoundSteps = append(state.RoundSteps, step)
+		terminal := *response
+		terminal.ToolCalls = nil
+		e.finishStalledTurn(ctx, state, sessionID, &terminal, step.Truncated)
+		return iterOutcomeBreak, nil
 	}
 
 	// Every round in a row that the provider cut off at the completion cap.

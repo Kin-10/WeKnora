@@ -134,6 +134,9 @@ type CustomAgentConfig struct {
 	// SystemPromptID references a template ID in prompt_templates/ YAML files.
 	// If set and SystemPrompt is empty, the template content is resolved at request time for saved agents.
 	SystemPromptID string `yaml:"system_prompt_id" json:"system_prompt_id,omitempty"`
+	// UserInputEnabled allows final answers to ask for missing details through
+	// structured in-conversation input cards. Existing agents remain opt-out.
+	UserInputEnabled bool `yaml:"user_input_enabled" json:"user_input_enabled,omitempty"`
 	// Context template for normal mode (how to format retrieved chunks)
 	ContextTemplate string `yaml:"context_template" json:"context_template"`
 	// ContextTemplateID references a template ID in prompt_templates/ YAML files.

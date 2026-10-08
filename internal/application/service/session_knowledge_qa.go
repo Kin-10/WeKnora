@@ -1139,6 +1139,9 @@ func buildFallbackMessages(chatManage *types.ChatManage, promptContent string) [
 	// the RAG summary system prompt (SummaryConfig.Prompt) here: that template
 	// forbids prior knowledge ("reply ONLY based on retrieved information"),
 	// which directly contradicts the fallback's purpose.
+	if chatManage.UserInputEnabled {
+		promptContent = strings.TrimSpace(promptContent) + "\n\n" + types.ConversationalUserInputPrompt
+	}
 	if strings.TrimSpace(promptContent) != "" {
 		messages = append(messages, chat.Message{
 			Role: "system",

@@ -253,7 +253,8 @@ func looksLikeBidDocument(title, markdown string) bool {
 
 func documentAnswerReady(message *types.Message) bool {
 	return message != nil && message.Role == "assistant" && message.IsCompleted &&
-		!message.DeletedAt.Valid && strings.TrimSpace(message.Content) != ""
+		!message.DeletedAt.Valid && strings.TrimSpace(message.Content) != "" &&
+		!types.HasUserInputRequest(message.Content)
 }
 
 // A continuation edge consists of the preceding assistant answer and exactly

@@ -96,9 +96,9 @@
     </div>
 
     <!-- Logo - Top Left -->
-    <a href="https://github.com/Tencent/WeKnora" target="_blank" class="header-logo" :title="$t('common.github')">
-      <img src="@/assets/img/weknora.png" alt="WeKnora" class="logo-image" />
-    </a>
+    <router-link to="/login" class="header-logo" :aria-label="APP_BRAND">
+      <BrandLogo class="logo-image" />
+    </router-link>
 
     <!-- Header Links - Top Right -->
     <div class="header-links">
@@ -110,14 +110,6 @@
           <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z" />
         </svg>
         <span class="link-text">{{ $t('common.website') }}</span>
-      </a>
-
-      <a href="https://github.com/Tencent/WeKnora" target="_blank" class="header-link" :title="$t('common.info')">
-        <svg width="17" height="17" viewBox="0 0 24 24" fill="currentColor">
-          <path
-            d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0 0 24 12c0-6.63-5.37-12-12-12z" />
-        </svg>
-        <span class="link-text">GitHub</span>
       </a>
 
       <div class="language-switch">
@@ -339,6 +331,8 @@
 <script setup lang="ts">
 import { ref, reactive, nextTick, onMounted, onBeforeUnmount, computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
+import BrandLogo from '@/components/BrandLogo.vue'
+import { APP_BRAND } from '@/config/brand'
 import { MessagePlugin } from 'tdesign-vue-next'
 import { useRoleLabel } from '@/composables/useRoleLabel'
 import { notifyLoginSuccess } from '@/utils/loginNotify'
@@ -1192,10 +1186,13 @@ onMounted(async () => {
   left: 50px;
   z-index: 100;
   cursor: pointer;
+  text-decoration: none;
 
   .logo-image {
-    width: 120px;
-    height: auto;
+    --brand-color: #fff;
+    --brand-mark-size: 36px;
+    --brand-font-size: 24px;
+    --brand-gap: 10px;
   }
 }
 
@@ -1646,7 +1643,8 @@ onMounted(async () => {
     left: 40px;
 
     .logo-image {
-      width: 100px;
+      --brand-mark-size: 32px;
+      --brand-font-size: 22px;
     }
   }
 
@@ -1694,7 +1692,8 @@ onMounted(async () => {
     left: 30px;
 
     .logo-image {
-      width: 80px;
+      --brand-mark-size: 30px;
+      --brand-font-size: 20px;
     }
   }
 
@@ -1754,7 +1753,9 @@ onMounted(async () => {
     left: 20px;
 
     .logo-image {
-      width: 70px;
+      --brand-mark-size: 28px;
+      --brand-font-size: 18px;
+      --brand-gap: 6px;
     }
   }
 
@@ -1820,10 +1821,6 @@ html[theme-mode="dark"] {
 
   .connection-line {
     stroke: rgba(255, 255, 255, 0.25);
-  }
-
-  .header-logo .logo-image {
-    filter: invert(1) hue-rotate(180deg) brightness(1.1);
   }
 
   .header-link {

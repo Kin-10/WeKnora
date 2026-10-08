@@ -347,6 +347,9 @@ func (h *Handler) configureDocumentRequest(ctx context.Context, owned *types.Ses
 }
 
 func (h *Handler) prepareAutomaticMessageDocument(ctx context.Context, message *types.Message) *types.MessageArtifact {
+	if !documentAnswerReady(message) {
+		return nil
+	}
 	if h.fileService == nil || h.sessionService == nil || h.messageService == nil {
 		return nil
 	}

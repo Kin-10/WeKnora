@@ -1,5 +1,7 @@
 import type { ArtifactMeta } from '@/api/chat'
 import { persistedAssistantId } from '../../utils/steerStreamFork'
+import { conversationInputRequests, conversationInputProblem } from '../../utils/conversationInput'
+import { hasCompleteBidDocument } from './bidGeneration'
 
 type Message = Record<string, any>
 
@@ -12,6 +14,9 @@ export function canGenerateAnswerDocument(
     && message.role === 'assistant' && message.is_completed === true
     && !message.persistence_error && !message.steerForked
     && !!persistedAssistantId(message) && !!String(message.content || '').trim()
+    && !conversationInputRequests(message.content).length
+    && !conversationInputProblem(message.content)
+    && !hasCompleteBidDocument(message)
 }
 
 /** Keep per-message indices stable when a list response omits deleted files. */

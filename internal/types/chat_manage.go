@@ -39,6 +39,8 @@ type PipelineRequest struct {
 	// CitationEnabled controls only final knowledge/web source citations. Nil
 	// defaults to true for requests and agents created before this option existed.
 	CitationEnabled *bool `json:"citation_enabled,omitempty"`
+	// UserInputEnabled permits opt-in clarification cards in generated answers.
+	UserInputEnabled bool `json:"-"`
 
 	// Rewrite parameters
 	EnableRewrite        bool   `json:"enable_rewrite"`
@@ -259,6 +261,7 @@ func (c *ChatManage) Clone() *ChatManage {
 			FallbackResponse:         c.FallbackResponse,
 			FallbackPrompt:           c.FallbackPrompt,
 			CitationEnabled:          c.CitationEnabled,
+			UserInputEnabled:         c.UserInputEnabled,
 			EnableRewrite:            c.EnableRewrite,
 			EnableQueryExpansion:     c.EnableQueryExpansion,
 			RewritePromptSystem:      c.RewritePromptSystem,

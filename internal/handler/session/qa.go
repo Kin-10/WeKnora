@@ -238,6 +238,9 @@ func (h *Handler) parseQARequest(c *gin.Context, logPrefix string) (*qaRequestCo
 		logger.Errorf(ctx, "Failed to get session, session ID: %s, error: %v", sessionID, err)
 		return nil, nil, errors.NewNotFoundError("Session not found")
 	}
+	if !strings.Contains(c.Request.URL.Path, "/bid-generation") && h.bidGenerationBlocksChat(ctx, sessionID, session.TenantID) {
+		return nil, nil, errors.NewConflictError("当前会话的标书任务正在进行，请通过任务卡片暂停或补充信息。")
+	}
 
 	// Get custom agent if agent_id is provided. Backend resolves shared agent from share relation (no client-provided tenant).
 	customAgent, effectiveTenantID, sharedAgentReadOnly := h.resolveAgent(ctx, c, request.AgentID, request.AgentSourceTenantID)

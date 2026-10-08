@@ -4,6 +4,7 @@ import vm from 'node:vm'
 import test from 'node:test'
 import { computed, reactive, ref } from 'vue'
 import { persistedAssistantId } from '../../utils/steerStreamFork.ts'
+import { isFullBidGenerationQuery, bidGenerationIsWaiting, bidGenerationAcceptsMessage, bidGenerationComposerControl } from './bidGeneration.ts'
 import {
   continuableAnswerId, continuationUserMessage, messageContinuationState,
   resolveAnswerContinuationState, continuationAttachments,
@@ -32,6 +33,13 @@ test('source agent/model override session defaults, and retrieval references nev
   assert.deepEqual(state.knowledge_base_ids, [])
   assert.deepEqual(state.knowledge_ids, [])
   assert.equal(resolveAnswerContinuationState({}, undefined), null)
+})
+
+test('the complete bid job final summary is not offered as an unfinished document continuation', () => {
+  assert.equal(continuableAnswerId([{ id: 'summary', role: 'assistant', content: '完整标书已生成。', is_completed: true,
+    artifacts: [{ source_path: 'generated-documents/bid-task/task-id/完整标书.docx' }] }]), '')
+  assert.equal(continuableAnswerId([{ id: 'draft', role: 'assistant', content: '草稿正文', is_completed: true,
+    artifacts: [{ source_path: 'generated-documents/draft-message/草稿.docx' }] }]), 'draft')
 })
 
 test('only a POST snapshot belonging to this session supplies original settings', () => {
@@ -77,6 +85,8 @@ function harness(overrides: Record<string, any> = {}) {
   let stopped = 0, fetched = 0
   const state = {
     ref, computed, continuableAnswerId, continuationUserMessage, messageContinuationState,
+    isFullBidGenerationQuery, bidGenerationIsWaiting, bidGenerationAcceptsMessage, bidGenerationComposerControl,
+    bidGenerationTask: ref(null), bidGenerationRequestBusy: ref(false), bidTaskEpoch: 1,
     resolveAnswerContinuationState, continuationAttachments, persistedAssistantId,
     session_id: ref('session'), props: { embeddedMode: false }, composerLocked: ref(false), forkInFlight: false,
     isReplying: ref(false), isStreaming: ref(false), isImRecovering: ref(false), loading: ref(false),

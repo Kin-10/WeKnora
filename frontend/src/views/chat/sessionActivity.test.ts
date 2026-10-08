@@ -4,6 +4,8 @@ import { runInNewContext } from 'node:vm'
 import test from 'node:test'
 import { effectScope, reactive, ref, watch } from 'vue'
 import { createSessionActivityState, type SessionActivity } from '../../stores/sessionActivityState'
+import { bidGenerationIsWriting } from './bidGeneration'
+import type { BidGenerationTask } from '@/api/bid-generation'
 
 const source = readFileSync(new URL('./index.vue', import.meta.url), 'utf8')
 const start = source.indexOf('watch([activitySessionId,')
@@ -16,9 +18,10 @@ function fixture() {
   const refs = {
     activitySessionId: ref('session-a'), isReplying: ref(false), isStreaming: ref(false),
     isImRecovering: ref(false), currentAssistantMessageId: ref('reply-a'),
+    bidGenerationTask: ref<BidGenerationTask | null>(null),
   }
   const scope = effectScope()
-  scope.run(() => runInNewContext(source.slice(start, end), { ...refs, sessionActivity, watch, props: { embeddedMode: false } }))
+  scope.run(() => runInNewContext(source.slice(start, end), { ...refs, sessionActivity, watch, bidGenerationIsWriting, props: { embeddedMode: false } }))
   return { ...refs, entries, sessionActivity, close: () => scope.stop() }
 }
 
@@ -66,5 +69,19 @@ test('stopping the current conversation does not clear a detached conversation',
     assert.ok(f.entries['session-a'])
     f.isReplying.value = true
     assert.ok(f.entries['session-b'], 'a new turn starts the indicator again')
+  } finally { f.close() }
+})
+
+test('background bid writing shows activity without SSE and waiting for input clears it', () => {
+  const f = fixture()
+  try {
+    f.bidGenerationTask.value = { id: 'bid-task', status: 'running' } as BidGenerationTask
+    assert.ok(f.entries['session-a'])
+    f.bidGenerationTask.value = { id: 'bid-task', status: 'awaiting_input' } as BidGenerationTask
+    assert.equal(f.entries['session-a'], undefined)
+    f.bidGenerationTask.value = { id: 'bid-task', status: 'planning' } as BidGenerationTask
+    assert.ok(f.entries['session-a'])
+    f.bidGenerationTask.value = { id: 'bid-task', status: 'completed' } as BidGenerationTask
+    assert.equal(f.entries['session-a'], undefined)
   } finally { f.close() }
 })

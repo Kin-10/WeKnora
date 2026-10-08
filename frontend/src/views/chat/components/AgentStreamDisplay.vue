@@ -449,7 +449,7 @@
                   @click.stop="emitGenerateDocument" :title="t('chat.generateWordHint')">
                   <t-icon v-if="!documentGenerating" name="file-word" />{{ t('chat.generateWord') }}
                 </t-button>
-                <DocumentFormattingNotice v-if="event === activeAnswerEventRef" :value="session?.document_formatting" />
+                <DocumentFormattingNotice v-if="event === activeAnswerEventRef && !awaitingConversationInput" :value="session?.document_formatting" />
                 <ChatRequestInfoButton v-if="showRequestInfo && isConversationDone" :session="session"
                   :session-id="sessionId" />
                 <transition name="follow-up-toolbar-loading">
@@ -683,6 +683,7 @@ import {
 } from '@/utils/sandboxArtifactRefs';
 import type { ProtectedFileAccessContext } from '@/utils/protectedFileAccess';
 import { unwrapFinalAnswerWrappers, thinkingEqualsAnswer } from '@/utils/finalAnswer';
+import { conversationInputMarkdown, conversationInputRequests, conversationInputProblem } from '@/utils/conversationInput';
 import { getAgentToolIconName } from '@/utils/agent-tool-icons';
 import { getMcpToolDisplayType, getMcpToolTitle, mcpToolResultOutput } from '@/utils/mcpToolDisplay';
 import { getQueryText, getWikiPageText } from '@/utils/agent-tool-display';
@@ -1621,8 +1622,10 @@ const activeAnswerMarkdown = computed(() => {
   if (!stream?.length) return '';
   const answers = stream.filter((e: any) => e.type === 'answer' && !e.superseded);
   const active = answers.find((e: any) => !e.done) ?? answers[answers.length - 1];
-  return typeof active?.content === 'string' ? active.content : '';
+  return conversationInputMarkdown(active?.content, !isSegmentDone.value);
 });
+const awaitingConversationInput = computed(() => conversationInputRequests(props.session?.content).length > 0
+  || conversationInputProblem(props.session?.content));
 
 // The answer event whose text is currently streaming. The template renders the
 // smoothed typewriter text for this event and the raw content for any others.
@@ -2634,7 +2637,7 @@ const renderMarkdownContent = (content: unknown): string => {
 // plain-text answer in, then delegates to the standard markdown renderer.
 const renderAnswerContent = (content: unknown): string => {
   const contentStr = typeof content === 'string' ? content : String(content || '');
-  return renderMarkdownContent(unwrapFinalAnswerWrappers(contentStr));
+  return renderMarkdownContent(conversationInputMarkdown(unwrapFinalAnswerWrappers(contentStr), !isSegmentDone.value));
 };
 
 // Legacy Markdown rendering function (kept for summaries)
@@ -3122,7 +3125,7 @@ const getActualContent = (answerEvent: any): string => {
   // First try to get content from answer event
   const answerContent = (answerEvent?.content || '').trim();
   if (answerContent) {
-    return unwrapFinalAnswerWrappers(answerContent).trim();
+    return conversationInputMarkdown(unwrapFinalAnswerWrappers(answerContent)).trim();
   }
 
   // If answer is empty, try to get from last thinking

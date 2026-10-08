@@ -135,6 +135,8 @@ type AgentConfig struct {
 	ReasoningEffort string `json:"reasoning_effort,omitempty"`
 	// Whether final answers include knowledge/web source citations. Nil defaults to true.
 	CitationEnabled *bool `json:"citation_enabled"`
+	// UserInputEnabled is resolved from the custom agent for this run only.
+	UserInputEnabled bool `json:"-"`
 	// Whether to retrieve knowledge base only when explicitly mentioned with @ (default: false)
 	RetrieveKBOnlyWhenMentioned bool `json:"retrieve_kb_only_when_mentioned"`
 
