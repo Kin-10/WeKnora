@@ -1,4 +1,7 @@
+import { anonymousBidCheckZh } from './anonymousBidCheck'
+
 export default {
+  anonymousBidCheck: anonymousBidCheckZh,
   modelCatalog: {
     "title": "模型目录",
     "description": "模型目录决定添加模型时可选的模型列表，以及上下文窗口、是否支持思考等默认参数。在这里修改后，所有空间立即生效。",
@@ -7829,6 +7832,7 @@ export default {
     agents: '智能体',
     artifacts: '产物',
     bidOpportunities: '标讯商机',
+    anonymousBidCheck: '暗标检查',
     organizations: '共享空间',
     newChat: '新对话',
     settings: '系统设置',

@@ -7,3 +7,10 @@ export function isSkillBundleUploadUrl(url: string | undefined): boolean {
     || /(?:^|\/)skills\/catalog$/.test(path)
     || /(?:^|\/)sandbox-configs\/[^/]+\/skills$/.test(path)
 }
+
+/** Anonymous bid checks have a separate per-document limit from knowledge uploads. */
+export function isAnonymousBidCheckUploadUrl(url: string | undefined): boolean {
+  if (!url) return false
+  const path = url.split('?')[0].replace(/\/+$/, '')
+  return /(?:^|\/)api\/v1\/anonymous-bid-check$/.test(path)
+}

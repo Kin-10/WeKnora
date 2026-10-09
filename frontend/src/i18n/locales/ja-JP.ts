@@ -1,4 +1,7 @@
+import { anonymousBidCheckEn } from './anonymousBidCheck'
+
 export default {
+  anonymousBidCheck: anonymousBidCheckEn,
   modelCatalog: {
     "title": "モデルカタログ",
     "description": "モデルカタログは、モデル追加時に選べるモデル一覧と、コンテキスト長や思考対応などの既定値を定義します。ここでの変更はすべてのワークスペースに即時反映されます。",
@@ -328,6 +331,7 @@ export default {
     agents: 'エージェント',
     artifacts: '成果物',
     bidOpportunities: '入札案件',
+    anonymousBidCheck: '匿名入札チェック',
     organizations: '共有スペース',
     newChat: '新しいチャット',
     settings: 'システム設定',

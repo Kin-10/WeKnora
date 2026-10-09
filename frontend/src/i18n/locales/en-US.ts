@@ -1,4 +1,7 @@
+import { anonymousBidCheckEn } from './anonymousBidCheck'
+
 export default {
+  anonymousBidCheck: anonymousBidCheckEn,
   modelCatalog: {
     "title": "Model catalog",
     "description": "The model catalog defines which models are offered when adding a model, along with defaults such as context window and reasoning support. Changes here apply to all workspaces immediately.",
@@ -328,6 +331,7 @@ export default {
     agents: 'Agents',
     artifacts: 'Artifacts',
     bidOpportunities: 'Bid Opportunities',
+    anonymousBidCheck: 'Anonymous Bid Check',
     organizations: 'Shared Spaces',
     newChat: 'New Chat',
     settings: 'System Settings',

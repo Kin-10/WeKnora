@@ -138,6 +138,12 @@ const router = createRouter({
           meta: { requiresInit: true, requiresAuth: true }
         },
         {
+          path: "anonymous-bid-check",
+          name: "anonymousBidCheck",
+          component: () => import("../views/anonymous-bid-check/AnonymousBidCheck.vue"),
+          meta: { requiresInit: true, requiresAuth: true }
+        },
+        {
           path: "artifacts",
           name: "artifactLibrary",
           component: () => import("../views/artifacts/ArtifactLibrary.vue"),

@@ -1,4 +1,7 @@
+import { anonymousBidCheckEn } from './anonymousBidCheck'
+
 export default {
+  anonymousBidCheck: anonymousBidCheckEn,
   modelCatalog: {
     "title": "Каталог моделей",
     "description": "Каталог моделей определяет, какие модели предлагаются при добавлении модели, и значения по умолчанию, например контекстное окно и поддержку рассуждений. Изменения здесь сразу применяются ко всем рабочим пространствам.",
@@ -7827,6 +7830,7 @@ export default {
     agents: 'Агенты',
     artifacts: 'Артефакты',
     bidOpportunities: 'Тендерные возможности',
+    anonymousBidCheck: 'Проверка анонимности заявки',
     organizations: 'Общие пространства',
     newChat: 'Новый диалог',
     settings: 'Настройки системы',

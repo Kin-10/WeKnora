@@ -4,6 +4,7 @@
 Requires Docker. Run: python3 scripts/test_embed_nginx.py [nginx-or-ui-image]
 """
 import json
+import socket
 import subprocess
 import sys
 import tempfile
@@ -110,6 +111,24 @@ def check():
                     assert b"embed entry" not in response.read()
             with request("/api/probe") as response:
                 assert response.read().decode() == f"127.0.0.1:{port}", "proxy lost public port"
+            # Expect: 100-continue verifies admission before transmitting a
+            # 400 MiB body. Only the check endpoint may accept both 200 MiB files.
+            def upload_admission(path, content_length):
+                with socket.create_connection(("127.0.0.1", int(port)), timeout=3) as conn:
+                    headers = (
+                        f"POST {path} HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\n"
+                        f"Content-Length: {content_length}\r\n"
+                        "Content-Type: multipart/form-data; boundary=probe\r\n"
+                        "Expect: 100-continue\r\nConnection: close\r\n\r\n"
+                    )
+                    conn.sendall(headers.encode("ascii"))
+                    status_line = conn.makefile("rb").readline()
+                    return int(status_line.split()[1])
+
+            body_limit = 401 * 1024 * 1024
+            assert upload_admission("/api/v1/anonymous-bid-check", body_limit) == 100
+            assert upload_admission("/api/v1/anonymous-bid-check", body_limit + 1) == 413
+            assert upload_admission("/api/v1/knowledge/upload", body_limit) == 413
             for method in ("POST", "GET", "DELETE"):
                 with request("/mcp/test-endpoint?probe=1", method, {
                     "Authorization": "Bearer test-token",

@@ -20,9 +20,11 @@ import (
 )
 
 func getMaxMessageSize() int {
-	if sizeStr := os.Getenv("MAX_FILE_SIZE_MB"); sizeStr != "" {
-		if size, err := strconv.Atoi(sizeStr); err == nil && size > 0 {
-			return size * 1024 * 1024
+	for _, key := range []string{"DOCREADER_GRPC_MAX_FILE_SIZE_MB", "MAX_FILE_SIZE_MB"} {
+		if sizeStr := os.Getenv(key); sizeStr != "" {
+			if size, err := strconv.Atoi(sizeStr); err == nil && size > 0 {
+				return size * 1024 * 1024
+			}
 		}
 	}
 	return 50 * 1024 * 1024

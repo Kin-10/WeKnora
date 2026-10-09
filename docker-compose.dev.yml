@@ -204,7 +204,7 @@ services:
       - full
 
   neo4j:
-    image: neo4j:latest
+    image: neo4j:2025.10.1
     container_name: WeKnora-neo4j-dev
     volumes:
       - neo4j-data-dev:/data
@@ -215,8 +215,8 @@ services:
       - NEO4J_apoc_import_file_use__neo4j__config=true
       - NEO4JLABS_PLUGINS=["apoc"]
     ports:
-      - "7474:7474"
-      - "7687:7687"
+      - "127.0.0.1:7474:7474"
+      - "127.0.0.1:7687:7687"
     restart: always
     networks:
       - WeKnora-network-dev
@@ -267,7 +267,7 @@ services:
       - GRPC_AUTH_TOKEN=${GRPC_AUTH_TOKEN:-}
       # ========== gRPC 服务参数 ==========
       - DOCREADER_GRPC_MAX_WORKERS=${DOCREADER_GRPC_MAX_WORKERS:-4}
-      - DOCREADER_GRPC_MAX_FILE_SIZE_MB=${DOCREADER_GRPC_MAX_FILE_SIZE_MB:-${MAX_FILE_SIZE_MB:-50}}
+      - DOCREADER_GRPC_MAX_FILE_SIZE_MB=${DOCREADER_GRPC_MAX_FILE_SIZE_MB:-256}
       - DOCREADER_GRPC_PORT=${DOCREADER_GRPC_PORT:-50051}
       # ========== 解析通用 ==========
       - DOCREADER_DOCX_MAX_PAGES=${DOCREADER_DOCX_MAX_PAGES:-0}

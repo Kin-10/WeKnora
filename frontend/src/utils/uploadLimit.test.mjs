@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 
-import { isSkillBundleUploadUrl } from './uploadLimit.ts'
+import { isAnonymousBidCheckUploadUrl, isSkillBundleUploadUrl } from './uploadLimit.ts'
 
 test('skill catalog and sandbox skill uploads use the skill-bundle 413 path', () => {
   assert.equal(isSkillBundleUploadUrl('/api/v1/skills/catalog'), true)
@@ -25,4 +25,14 @@ test('knowledge and other API uploads stay on the knowledge-size 413 path', () =
   assert.equal(isSkillBundleUploadUrl('/api/v1/knowledge'), false)
   assert.equal(isSkillBundleUploadUrl('/api/v1/knowledge-bases/kb-1/knowledge'), false)
   assert.equal(isSkillBundleUploadUrl('/api/v1/models/debug'), false)
+})
+
+test('anonymous bid checks use their own size error without changing other upload limits', () => {
+  for (const url of ['/api/v1/anonymous-bid-check', '/api/v1/anonymous-bid-check/', '/api/v1/anonymous-bid-check?scope=technical', 'https://host/api/v1/anonymous-bid-check']) {
+    assert.equal(isAnonymousBidCheckUploadUrl(url), true)
+    assert.equal(isSkillBundleUploadUrl(url), false)
+  }
+  for (const url of [undefined, '/api/v1/knowledge', '/api/v1/skills/catalog', '/api/v1/anonymous-bid-check/report']) {
+    assert.equal(isAnonymousBidCheckUploadUrl(url), false)
+  }
 })

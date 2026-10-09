@@ -3,7 +3,7 @@ import axios from "axios";
 import { generateRandomString, MAX_FILE_SIZE_MB, MAX_SKILL_BUNDLE_SIZE_MB } from "./index";
 import i18n from '@/i18n'
 import { getApiBaseUrl } from './api-base';
-import { isSkillBundleUploadUrl } from './uploadLimit';
+import { isAnonymousBidCheckUploadUrl, isSkillBundleUploadUrl } from './uploadLimit';
 import { isTimeoutError, uploadTimeoutMs } from './requestTimeouts';
 import {
   forceReloginRedirect,
@@ -197,9 +197,12 @@ instance.interceptors.response.use(
     const ERR_ENTITY_TOO_LARGE = 413;
     if (error.response.status === ERR_ENTITY_TOO_LARGE) {
       const skillUpload = isSkillBundleUploadUrl(error.config?.url)
+      const anonymousBidUpload = isAnonymousBidCheckUploadUrl(error.config?.url)
       return Promise.reject(withHttpStatus({
         status: ERR_ENTITY_TOO_LARGE,
-        message: skillUpload
+        message: anonymousBidUpload
+          ? i18n.global.t('anonymousBidCheck.fileErrors.size')
+          : skillUpload
           ? i18n.global.t('settings.sandbox.skillBundleTooLarge', { size: MAX_SKILL_BUNDLE_SIZE_MB })
           : i18n.global.t('error.fileSizeExceeded', { size: MAX_FILE_SIZE_MB }),
         success: false

@@ -1,4 +1,7 @@
+import { anonymousBidCheckEn } from './anonymousBidCheck'
+
 export default {
+  anonymousBidCheck: anonymousBidCheckEn,
   modelCatalog: {
     "title": "모델 카탈로그",
     "description": "모델 카탈로그는 모델 추가 시 선택할 수 있는 모델 목록과 컨텍스트 창, 추론 지원 여부 같은 기본값을 정의합니다. 여기서 변경하면 모든 워크스페이스에 즉시 적용됩니다.",
@@ -7827,6 +7830,7 @@ export default {
     agents: '에이전트',
     artifacts: '산출물',
     bidOpportunities: '입찰 기회',
+    anonymousBidCheck: '익명 입찰 검토',
     organizations: '공유 공간',
     newChat: '새 대화',
     settings: '시스템 설정',
