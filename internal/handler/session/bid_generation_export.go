@@ -14,6 +14,7 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/Tencent/WeKnora/internal/bidformat"
 	"github.com/Tencent/WeKnora/internal/bidgen"
 	"github.com/Tencent/WeKnora/internal/logger"
 	"github.com/Tencent/WeKnora/internal/types"
@@ -137,15 +138,23 @@ func (h *Handler) exportBidGeneration(ctx context.Context, task *bidgen.Task) (*
 	if err := json.Unmarshal(task.State.RequestSnapshot, &snapshot); err != nil || snapshot.SourceMessageID == "" {
 		return nil, fmt.Errorf("bid generation source snapshot unavailable")
 	}
-	_, mixed := tenderDocumentScope(document, snapshot.Query)
+	scope, mixed := tenderDocumentScope(document, snapshot.Query)
 	anonymous := isAnonymousBidDocument(snapshot.Query) || isAnonymousBidDocument(document.Title) || documentHasAnonymousBidHeading(document.Markdown)
 	if tender := snapshot.ExecutionContext.TenderFormatting; tender != nil {
 		spec, _ := tender.Result.Resolve("technical")
 		anonymous = anonymous || (spec.Anonymous != nil && *spec.Anonymous)
 		mixed = mixed || tenderRequiresSeparateVolumes(tender, document.Markdown)
 	}
-	if anonymous && mixed {
-		return nil, fmt.Errorf("商务标与技术暗标需要分别生成，不能合并身份或报价章节")
+	// Body-level commercial phrasing also violates an anonymous technical
+	// volume, even when the chapter headings themselves stay technical. A
+	// commercial volume legitimately contains pricing, so only technical
+	// documents are scanned.
+	leaked := []string{}
+	if scope == bidformat.ScopeTechnical {
+		leaked = bidBodyScopeLeakSections(task)
+	}
+	if anonymous && (mixed || len(leaked) > 0) {
+		return nil, bidScopeMixRecovery(task, document, leaked)
 	}
 	owned, err := h.sessionService.GetOwnedSession(ctx, task.SessionID)
 	if err != nil || owned == nil || owned.ID != task.SessionID || owned.TenantID != task.TenantID ||
@@ -320,4 +329,49 @@ func bidGenerationExportSummary(language string, document messageDocument, artif
 		result += "\n\n" + formatting.Warning
 	}
 	return result
+}
+
+// businessScopeHeadingWords are chapter-title markers that belong to the
+// commercial volume and can never appear in an anonymous technical volume.
+var businessScopeHeadingWords = []string{"投标函", "报价", "法定代表人", "授权委托", "商务标", "商务响应", "资格证明", "开标一览表"}
+
+// bidBodyScopeLeakPhrases are body-text markers of commercial scope: pricing
+// language or cross-references to the commercial volume have no place inside
+// an anonymous technical draft.
+var bidBodyScopeLeakPhrases = []string{"投标报价", "评标价", "开标一览表", "商务标", "单价", "总价"}
+
+// bidBodyScopeLeakSections lists sections whose drafted body text leaked
+// commercial-scope phrasing into what should be a pure technical volume.
+func bidBodyScopeLeakSections(task *bidgen.Task) []string {
+	leaked := make([]string, 0)
+	for _, section := range task.State.Sections {
+		for _, phrase := range bidBodyScopeLeakPhrases {
+			if strings.Contains(section.Content, phrase) {
+				leaked = append(leaked, section.ID)
+				break
+			}
+		}
+	}
+	return leaked
+}
+
+// bidScopeMixRecovery classifies a mixed anonymous-technical draft so the
+// worker repairs it instead of dead-ending at export: business chapter
+// headings mean the outline itself spans volumes and must be re-planned under
+// the single-volume rules; otherwise the leaked sections are named for a
+// redraft under the anonymous-volume drafting ban.
+func bidScopeMixRecovery(task *bidgen.Task, document messageDocument, leaked []string) error {
+	for _, heading := range bidDocumentHeadingRE.FindAllStringSubmatch(document.Markdown, -1) {
+		for _, word := range businessScopeHeadingWords {
+			if strings.Contains(heading[1], word) {
+				return &bidgen.ScopeMixError{Replan: true}
+			}
+		}
+	}
+	if len(leaked) == 0 {
+		// The mixed verdict came from headings that no longer map to a live
+		// section; a fresh single-volume plan is the only safe repair.
+		return &bidgen.ScopeMixError{Replan: true}
+	}
+	return &bidgen.ScopeMixError{Sections: leaked}
 }

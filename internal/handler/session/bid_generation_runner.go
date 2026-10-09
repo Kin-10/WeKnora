@@ -9,8 +9,10 @@ import (
 	"time"
 
 	"github.com/Tencent/WeKnora/internal/application/access"
+	"github.com/Tencent/WeKnora/internal/bidformat"
 	"github.com/Tencent/WeKnora/internal/bidgen"
 	"github.com/Tencent/WeKnora/internal/event"
+	"github.com/Tencent/WeKnora/internal/models/api"
 	"github.com/Tencent/WeKnora/internal/types"
 	"github.com/google/uuid"
 )
@@ -120,6 +122,14 @@ func (r *bidGenerationRunner) Generate(ctx context.Context, task *bidgen.Task, g
 	snapshot.ExecutionContext.TenderFormatting = h.collectTenderFormatting(ctx, owned, snapshot.Attachments,
 		snapshot.RequestState.KnowledgeIDs, snapshot.ExecutionContext.TenderFormatting)
 	task.State.RequestSnapshot, _ = json.Marshal(snapshot)
+	// The parsed tender itself answers the scope question: when it reveals
+	// separated volumes or multiple lots and the user has not named a scope,
+	// hand the deterministic picker to the task before any planning call.
+	if generation.Phase == bidgen.PhasePlanning {
+		if output, asked := h.bidScopeSelectionInput(ctx, task, &snapshot); asked {
+			return *output, nil
+		}
+	}
 	// Clone the approved agent before adding task instructions; never alter its
 	// saved prompt or accidentally introduce writes to a shared source workspace.
 	agentData, _ := json.Marshal(snapshot.CustomAgent)
@@ -127,6 +137,19 @@ func (r *bidGenerationRunner) Generate(ctx context.Context, task *bidgen.Task, g
 	_ = json.Unmarshal(agentData, &agent)
 	agent.Config.UserInputEnabled = true
 	agent.Config.MemoryEnabled = boolPointer(false)
+	if generation.Phase == bidgen.PhaseSection {
+		// Section drafting works from already-retrieved tender facts and the
+		// fixed plan, so extended thinking adds latency per chapter without
+		// adding compliance: requirements coverage is enforced by the server
+		// protocol either way. Planning keeps the session's setting.
+		agent.Config.ReasoningEffort = string(api.ReasoningOff)
+		agent.Config.Thinking = boolPointer(false)
+		// An anonymous technical volume must stay pure: export refuses mixed
+		// volumes, and 暗标 evaluation rejects identity leakage in body text.
+		if tenderRequiresAnonymousTechnical(snapshot.ExecutionContext.TenderFormatting) {
+			agent.Config.SystemPrompt += "\n\n本任务生成技术暗标分册。正文与表格中严禁出现供应商/制造商名称、人员姓名、联系方式、地址、印章或标识图片；严禁出现“投标报价”“评标价”“单价”“总价”“开标一览表”等报价表述；严禁引用“商务标”章节或声明与商务标口径一致。确需商务口径的内容一律省略，并标注【商务标事项，另行编制】。"
+		}
+	}
 	agent.Config.SystemPrompt += "\n\n" + tenderWritingPrompt(snapshot.ExecutionContext.TenderFormatting) +
 		"\n\nThis is a session-bound bid generation task. Follow the current phase's output contract exactly. " +
 		"Only ask essential missing facts using weknora-input; do not add a next-action card after completing the requested section. " +
@@ -245,9 +268,13 @@ func (r *bidGenerationRunner) Generate(ctx context.Context, task *bidgen.Task, g
 		return nil
 	})
 	prompt := "本次标书任务的原始要求：\n" + snapshot.Query + "\n\n" + generation.Prompt
+	effort := snapshot.RequestState.ReasoningEffort
+	if generation.Phase == bidgen.PhaseSection {
+		effort = string(api.ReasoningOff)
+	}
 	req := &types.QARequest{Session: owned, Query: prompt, AssistantMessageID: message.ID,
 		CustomAgent: &agent, SummaryModelID: snapshot.RequestState.ModelID,
-		ReasoningEffort: snapshot.RequestState.ReasoningEffort, SharedAgentReadOnly: snapshot.SharedAgentReadOnly,
+		ReasoningEffort: effort, SharedAgentReadOnly: snapshot.SharedAgentReadOnly,
 		KnowledgeBaseIDs: snapshot.RequestState.KnowledgeBaseIDs, KnowledgeIDs: snapshot.RequestState.KnowledgeIDs,
 		TagScopes: snapshot.ExecutionContext.TagScopes, MCPServiceIDs: snapshot.RequestState.MCPServiceIDs,
 		SkillNames: snapshot.RequestState.SkillNames, WebSearchEnabled: snapshot.RequestState.WebSearchEnabled,
@@ -336,3 +363,21 @@ func (r *bidGenerationRunner) Export(ctx context.Context, task *bidgen.Task) (*b
 }
 
 func boolPointer(value bool) *bool { return &value }
+
+// tenderRequiresAnonymousTechnical reports whether the tender's technical
+// volume is an anonymous (暗标) volume, matching the export gate's two
+// recognition paths: the resolved spec flag or an explicit anonymous rule.
+func tenderRequiresAnonymousTechnical(tender *types.TenderFormattingSnapshot) bool {
+	if tender == nil {
+		return false
+	}
+	if spec, _ := tender.Result.Resolve(bidformat.ScopeTechnical); spec.Anonymous != nil && *spec.Anonymous {
+		return true
+	}
+	for _, rule := range tender.Result.Rules {
+		if rule.Scope == bidformat.ScopeTechnical && rule.Property == "anonymous" && rule.Value == "true" {
+			return true
+		}
+	}
+	return false
+}

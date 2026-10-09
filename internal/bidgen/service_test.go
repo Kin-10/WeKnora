@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -117,6 +118,9 @@ func confirmPlan(t *testing.T, service *Service, task *Task) *Task {
 }
 
 func TestFullBidTruncationClarificationRestartAndSavedSectionExport(t *testing.T) {
+	// This walk-through pins the single-flight round order (truncate → card →
+	// restart), so the step must consume queued outputs one at a time.
+	t.Setenv("BIDGEN_PARALLEL_SECTIONS", "1")
 	store := testStore(t)
 	partial := substantialBody + "\n实施计划：阶段一完成资料核验。"
 	card := "请补充到货日期。\n\n```weknora-input\n{\"id\":\"delivery\",\"title\":\"到货日期\",\"questions\":[{\"id\":\"date\",\"label\":\"准确到货日期\",\"type\":\"text\"}]}\n```"
@@ -320,4 +324,208 @@ func TestCancelledLiveStepCannotOverwriteCheckpointOrScheduleAnotherCall(t *test
 	require.Empty(t, task.State.Sections[0].Content)
 	require.Len(t, enqueued, count)
 	require.Empty(t, runner.exports)
+}
+
+func TestParallelSectionBatchDraftsConcurrentlyAndMergesInOrder(t *testing.T) {
+	t.Setenv("BIDGEN_PARALLEL_SECTIONS", "4")
+	store := testStore(t)
+	var live, peak int32
+	var mu sync.Mutex
+	runner := &stubRunner{generateFn: func(ctx context.Context, task *Task, request GenerationRequest) (Output, error) {
+		if request.Phase == PhasePlanning {
+			return Output{Content: fixturePlan(3), MessageID: "outline"}, nil
+		}
+		current := atomic.AddInt32(&live, 1)
+		mu.Lock()
+		if current > peak {
+			peak = current
+		}
+		mu.Unlock()
+		time.Sleep(40 * time.Millisecond)
+		atomic.AddInt32(&live, -1)
+		// Refresh the snapshot like the real runner does; one refreshed copy
+		// must persist so later steps reuse the tender formatting cache.
+		task.State.RequestSnapshot = json.RawMessage(`{"query":"编写完整标书","resolved_format":"宋体四号"}`)
+		return completedSection(request.SectionID, substantialBody, "msg-"+request.SectionID), nil
+	}}
+	service := NewService(store, runner, nil)
+	task := confirmPlan(t, service, start(t, service))
+	require.NoError(t, service.Process(t.Context(), task.ID))
+	task = load(t, store, task.ID)
+	require.Equal(t, int32(3), peak, "three sections must draft concurrently in one step")
+	for i := range task.State.Sections {
+		require.True(t, task.State.Sections[i].Completed, "section %d", i)
+		require.Equal(t, substantialBody, task.State.Sections[i].Content, "section %d", i)
+	}
+	require.Equal(t, PhaseExport, task.State.Phase)
+	require.Equal(t, 3, task.State.SectionIndex)
+	require.Contains(t, string(task.State.RequestSnapshot), "resolved_format")
+	require.NoError(t, service.Process(t.Context(), task.ID))
+	require.Equal(t, StatusCompleted, load(t, store, task.ID).Status)
+}
+
+func TestParallelBatchCardPausesWhileSiblingSectionsFinish(t *testing.T) {
+	t.Setenv("BIDGEN_PARALLEL_SECTIONS", "4")
+	store := testStore(t)
+	card := "请补充到货日期。\n\n```weknora-input\n{\"id\":\"delivery\",\"title\":\"到货日期\",\"questions\":[{\"id\":\"date\",\"label\":\"准确到货日期\",\"type\":\"text\"}]}\n```"
+	runner := &stubRunner{generateFn: func(ctx context.Context, task *Task, request GenerationRequest) (Output, error) {
+		if request.Phase == PhasePlanning {
+			return Output{Content: fixturePlan(3), MessageID: "outline"}, nil
+		}
+		if request.SectionID == "b" {
+			return Output{Content: card, MessageID: "need-date"}, nil
+		}
+		return completedSection(request.SectionID, substantialBody, "msg-"+request.SectionID), nil
+	}}
+	service := NewService(store, runner, nil)
+	task := confirmPlan(t, service, start(t, service))
+	require.NoError(t, service.Process(t.Context(), task.ID))
+	task = load(t, store, task.ID)
+	require.Equal(t, StatusAwaitingInput, task.Status)
+	require.Equal(t, "need-date", task.State.PendingMessageID)
+	require.True(t, task.State.Sections[0].Completed, "sibling before the card still completes")
+	require.True(t, task.State.Sections[2].Completed, "sibling after the card still completes")
+	require.False(t, task.State.Sections[1].Completed)
+	require.Empty(t, task.State.Sections[1].Content, "clarification prose is never bid text")
+	require.Equal(t, 1, task.State.SectionIndex, "the cursor stops at the section awaiting input")
+	require.Equal(t, PhaseSection, task.State.Phase)
+}
+
+func TestParallelBatchPartialFailureKeepsSiblingProgress(t *testing.T) {
+	t.Setenv("BIDGEN_PARALLEL_SECTIONS", "4")
+	store := testStore(t)
+	runner := &stubRunner{generateFn: func(ctx context.Context, task *Task, request GenerationRequest) (Output, error) {
+		if request.Phase == PhasePlanning {
+			return Output{Content: fixturePlan(2), MessageID: "outline"}, nil
+		}
+		if request.SectionID == "a" {
+			return Output{}, errors.New("provider private diagnostic with a secret")
+		}
+		return completedSection(request.SectionID, substantialBody, "msg-"+request.SectionID), nil
+	}}
+	service := NewService(store, runner, nil)
+	task := confirmPlan(t, service, start(t, service))
+	require.NoError(t, service.Process(t.Context(), task.ID))
+	task = load(t, store, task.ID)
+	require.Equal(t, StatusRunning, task.Status, "one failed call must not fail the whole batch")
+	require.True(t, task.State.Sections[1].Completed)
+	require.False(t, task.State.Sections[0].Completed)
+	require.True(t, task.State.Sections[0].Truncated)
+	require.Equal(t, 0, task.State.SectionIndex)
+	require.NotContains(t, task.LastError, "secret")
+	// The next step retries only the failed section.
+	runner.generateFn = func(ctx context.Context, task *Task, request GenerationRequest) (Output, error) {
+		return completedSection(request.SectionID, substantialBody, "retry-"+request.SectionID), nil
+	}
+	require.NoError(t, service.Process(t.Context(), task.ID))
+	task = load(t, store, task.ID)
+	require.Equal(t, PhaseExport, task.State.Phase)
+	require.True(t, task.State.Sections[0].Completed)
+	require.Len(t, runner.requests, 1+2+1, "the retry batch must draft only the unfinished section")
+}
+
+func TestParallelSectionsEnvBounds(t *testing.T) {
+	require.Equal(t, 4, parallelSections())
+	t.Setenv("BIDGEN_PARALLEL_SECTIONS", "1")
+	require.Equal(t, 1, parallelSections())
+	t.Setenv("BIDGEN_PARALLEL_SECTIONS", "0")
+	require.Equal(t, 1, parallelSections())
+	t.Setenv("BIDGEN_PARALLEL_SECTIONS", "not-a-number")
+	require.Equal(t, 1, parallelSections())
+	t.Setenv("BIDGEN_PARALLEL_SECTIONS", "16")
+	require.Equal(t, 8, parallelSections())
+}
+
+func TestExportScopeMixReplansMixedOutlineAndKeepsReplies(t *testing.T) {
+	t.Setenv("BIDGEN_PARALLEL_SECTIONS", "1")
+	store := testStore(t)
+	runner := &stubRunner{outputs: []Output{{Content: fixturePlan(1), MessageID: "outline"}, completedSection("a", substantialBody, "chapter-a")}}
+	service := NewService(store, runner, nil)
+	task := confirmPlan(t, service, start(t, service))
+	require.NoError(t, service.Process(t.Context(), task.ID))
+	task = load(t, store, task.ID)
+	require.Equal(t, PhaseExport, task.State.Phase)
+	require.True(t, task.State.Sections[0].Completed)
+
+	runner.exportError = &ScopeMixError{Replan: true}
+	require.NoError(t, service.Process(t.Context(), task.ID))
+	task = load(t, store, task.ID)
+	require.Equal(t, StatusPlanning, task.Status)
+	require.Equal(t, PhasePlanning, task.State.Phase)
+	require.Nil(t, task.State.Plan)
+	require.Empty(t, task.State.Sections)
+	require.Contains(t, string(task.State.RequestSnapshot), "authorized-tender", "the frozen request scope survives the re-plan")
+	require.Contains(t, task.LastError, "分别生成")
+
+	// The corrected planning round produces a fresh single-volume outline.
+	runner.generateFn = func(ctx context.Context, task *Task, request GenerationRequest) (Output, error) {
+		return Output{Content: fixturePlan(1), MessageID: "outline-2"}, nil
+	}
+	runner.exportError = nil
+	require.NoError(t, service.Process(t.Context(), task.ID))
+	task = load(t, store, task.ID)
+	require.Equal(t, StatusAwaitingOutline, task.Status)
+}
+
+func TestExportScopeMixResetsLeakedSectionsOnly(t *testing.T) {
+	t.Setenv("BIDGEN_PARALLEL_SECTIONS", "1")
+	store := testStore(t)
+	runner := &stubRunner{outputs: []Output{{Content: fixturePlan(2), MessageID: "outline"},
+		completedSection("a", substantialBody, "chapter-a"), completedSection("b", substantialBody, "chapter-b")}}
+	service := NewService(store, runner, nil)
+	task := confirmPlan(t, service, start(t, service))
+	require.NoError(t, service.Process(t.Context(), task.ID))
+	require.NoError(t, service.Process(t.Context(), task.ID))
+	task = load(t, store, task.ID)
+	require.Equal(t, PhaseExport, task.State.Phase)
+
+	runner.exportError = &ScopeMixError{Sections: []string{"a"}}
+	require.NoError(t, service.Process(t.Context(), task.ID))
+	task = load(t, store, task.ID)
+	require.Equal(t, StatusRunning, task.Status)
+	require.Equal(t, PhaseSection, task.State.Phase)
+	require.Equal(t, 0, task.State.SectionIndex)
+	require.False(t, task.State.Sections[0].Completed)
+	require.Empty(t, task.State.Sections[0].Content)
+	require.True(t, task.State.Sections[1].Completed, "clean sibling sections are never reset")
+	require.Equal(t, substantialBody, task.State.Sections[1].Content)
+	require.Contains(t, task.LastError, "已重置")
+
+	// The redrafted section completes and the document exports.
+	runner.generateFn = func(ctx context.Context, task *Task, request GenerationRequest) (Output, error) {
+		return completedSection(request.SectionID, substantialBody, "retry-"+request.SectionID), nil
+	}
+	runner.exportError = nil
+	require.NoError(t, service.Process(t.Context(), task.ID))
+	task = load(t, store, task.ID)
+	require.Equal(t, PhaseExport, task.State.Phase)
+	require.True(t, task.State.Sections[0].Completed)
+	require.NoError(t, service.Process(t.Context(), task.ID))
+	require.Equal(t, StatusCompleted, load(t, store, task.ID).Status)
+}
+
+func TestExportScopeMixFailsAfterBoundedRetries(t *testing.T) {
+	t.Setenv("BIDGEN_PARALLEL_SECTIONS", "1")
+	store := testStore(t)
+	runner := &stubRunner{outputs: []Output{{Content: fixturePlan(1), MessageID: "outline"}, completedSection("a", substantialBody, "chapter-a")}}
+	service := NewService(store, runner, nil)
+	task := confirmPlan(t, service, start(t, service))
+	require.NoError(t, service.Process(t.Context(), task.ID))
+	task = load(t, store, task.ID)
+	require.Equal(t, PhaseExport, task.State.Phase)
+
+	// The model keeps leaking commercial phrasing; recovery must not loop forever.
+	runner.exportError = &ScopeMixError{Sections: []string{"a"}}
+	runner.generateFn = func(ctx context.Context, task *Task, request GenerationRequest) (Output, error) {
+		return completedSection(request.SectionID, substantialBody, "again"), nil
+	}
+	for i := 0; i < 8; i++ {
+		require.NoError(t, service.Process(t.Context(), task.ID))
+		task = load(t, store, task.ID)
+		if task.Status == StatusFailed {
+			break
+		}
+	}
+	require.Equal(t, StatusFailed, task.Status)
+	require.Contains(t, task.LastError, "分别生成单册")
 }

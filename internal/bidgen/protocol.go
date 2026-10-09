@@ -306,3 +306,23 @@ func DocumentMarkdown(task *Task) (string, error) {
 	}
 	return out.String(), nil
 }
+
+// ScopeMixError reports that the compiled draft mixes commercial identity or
+// pricing chapters into a technical anonymous volume (or the outline mixes
+// both volumes). The worker responds by re-planning the outline or resetting
+// the named sections, so a separated-volume tender never dead-ends at export.
+type ScopeMixError struct {
+	// Sections lists the ids whose drafted content leaked commercial scope
+	// and must be regenerated under the anonymous-volume drafting rules.
+	Sections []string
+	// Replan marks outline-level mixing: the plan itself spans both volumes
+	// and must be discarded for a single-volume re-plan.
+	Replan bool
+}
+
+func (e *ScopeMixError) Error() string {
+	if e.Replan {
+		return "商务标与技术暗标需要分别生成，目录混有两册章节，已退回重新规划单册范围。"
+	}
+	return "商务标与技术暗标需要分别生成，已重置混入商务身份或报价表述的章节。"
+}

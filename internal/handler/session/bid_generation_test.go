@@ -13,8 +13,10 @@ import (
 	"time"
 
 	"github.com/Tencent/WeKnora/internal/application/access"
+	"github.com/Tencent/WeKnora/internal/bidformat"
 	"github.com/Tencent/WeKnora/internal/bidgen"
 	"github.com/Tencent/WeKnora/internal/event"
+	"github.com/Tencent/WeKnora/internal/models/api"
 	"github.com/Tencent/WeKnora/internal/types"
 	"github.com/Tencent/WeKnora/internal/types/interfaces"
 	"github.com/gin-gonic/gin"
@@ -420,4 +422,137 @@ func TestBidGenerationProcessingAttachmentPausesWithoutModelCall(t *testing.T) {
 	require.NotContains(t, waiting.State.PendingInput, "PRIVATE_SOURCE")
 	require.Len(t, messages.messages, 1)
 	require.False(t, messages.messages[0].ExecutionContext.DocumentRequested)
+}
+
+
+func TestBidGenerationRunnerDisablesThinkingOnlyForSectionDrafting(t *testing.T) {
+	runner, task, service, _ := bidRunnerFixture(t, types.AgentModeSmartReasoning)
+	// The session explicitly asked for high effort; planning keeps it while
+	// section drafting pins it off for speed.
+	var snapshot bidGenerationSnapshot
+	require.NoError(t, json.Unmarshal(task.State.RequestSnapshot, &snapshot))
+	snapshot.RequestState.ReasoningEffort = string(api.ReasoningHigh)
+	frozen, err := json.Marshal(snapshot)
+	require.NoError(t, err)
+	task.State.RequestSnapshot = frozen
+
+	var seenSection *types.QARequest
+	service.generate = func(ctx context.Context, req *types.QARequest, bus *event.EventBus) error {
+		seenSection = req
+		return bus.Emit(ctx, event.Event{Type: event.EventAgentComplete, Data: event.AgentCompleteData{FinalAnswer: "正文"}})
+	}
+	_, err = runner.Generate(t.Context(), task, bidgen.GenerationRequest{Phase: bidgen.PhaseSection, SectionID: "a", Prompt: "当前章节"})
+	require.NoError(t, err)
+	require.Equal(t, string(api.ReasoningOff), seenSection.ReasoningEffort)
+	require.Equal(t, string(api.ReasoningOff), seenSection.CustomAgent.Config.ReasoningEffort)
+	require.NotNil(t, seenSection.CustomAgent.Config.Thinking)
+	require.False(t, *seenSection.CustomAgent.Config.Thinking)
+
+	// Planning keeps the session-configured level: outline quality is unchanged.
+	var seenPlanning *types.QARequest
+	service.generate = func(ctx context.Context, req *types.QARequest, bus *event.EventBus) error {
+		seenPlanning = req
+		planBody, _ := json.Marshal(bidgen.Plan{Title: "投标文件",
+			Sections: []bidgen.SectionSpec{{ID: "a", Title: "第一章", Requirements: []string{"r"}, TargetWords: 100}}})
+		plan := "```weknora-bid-plan\n" + string(planBody) + "\n```"
+		return bus.Emit(ctx, event.Event{Type: event.EventAgentComplete, Data: event.AgentCompleteData{FinalAnswer: plan}})
+	}
+	_, err = runner.Generate(t.Context(), task, bidgen.GenerationRequest{Phase: bidgen.PhasePlanning, Prompt: "规划"})
+	require.NoError(t, err)
+	require.Equal(t, string(api.ReasoningHigh), seenPlanning.ReasoningEffort)
+}
+
+func TestBidGenerationRunnerBansCommercialScopeInAnonymousTechnicalSections(t *testing.T) {
+	runner, task, service, _ := bidRunnerFixture(t, types.AgentModeSmartReasoning)
+	var snapshot bidGenerationSnapshot
+	require.NoError(t, json.Unmarshal(task.State.RequestSnapshot, &snapshot))
+	snapshot.ExecutionContext.TenderFormatting = &types.TenderFormattingSnapshot{
+		Result: bidformat.Result{Rules: []bidformat.Rule{{
+			Scope: bidformat.ScopeTechnical, Property: "anonymous", Value: "true",
+		}}},
+	}
+	frozen, err := json.Marshal(snapshot)
+	require.NoError(t, err)
+	task.State.RequestSnapshot = frozen
+
+	var systemPrompt string
+	service.generate = func(ctx context.Context, req *types.QARequest, bus *event.EventBus) error {
+		systemPrompt = req.CustomAgent.Config.SystemPrompt
+		return bus.Emit(ctx, event.Event{Type: event.EventAgentComplete, Data: event.AgentCompleteData{FinalAnswer: "正文"}})
+	}
+	_, err = runner.Generate(t.Context(), task, bidgen.GenerationRequest{Phase: bidgen.PhaseSection, SectionID: "a", Prompt: "当前章节"})
+	require.NoError(t, err)
+	require.Contains(t, systemPrompt, "技术暗标分册")
+	require.Contains(t, systemPrompt, "严禁出现")
+	require.Contains(t, systemPrompt, "商务标事项，另行编制")
+
+	// Without the anonymous rule the ban must not fire: a commercial volume
+	// legitimately discusses pricing.
+	snapshot.ExecutionContext.TenderFormatting = nil
+	frozen, err = json.Marshal(snapshot)
+	require.NoError(t, err)
+	task.State.RequestSnapshot = frozen
+	service.generate = func(ctx context.Context, req *types.QARequest, bus *event.EventBus) error {
+		systemPrompt = req.CustomAgent.Config.SystemPrompt
+		return bus.Emit(ctx, event.Event{Type: event.EventAgentComplete, Data: event.AgentCompleteData{FinalAnswer: "正文"}})
+	}
+	_, err = runner.Generate(t.Context(), task, bidgen.GenerationRequest{Phase: bidgen.PhaseSection, SectionID: "a", Prompt: "当前章节"})
+	require.NoError(t, err)
+	require.NotContains(t, systemPrompt, "技术暗标分册")
+}
+
+func TestBidGenerationScopePickerAppearsImmediatelyFromParsedTender(t *testing.T) {
+	runner, task, service, store := bidRunnerFixture(t, types.AgentModeSmartReasoning)
+	tender := "邯郸市中心血站酶免试剂盒采购项目招标文件：本项目共分为4个包。第1包：乙型肝炎病毒诊断试剂，预算40.7万元；第2包：梅毒螺旋体抗体诊断试剂；第3包：乙肝梅毒试剂；第4包：丙肝艾滋试剂。商务标与技术标分开编制，技术标为暗标。"
+	var snapshot bidGenerationSnapshot
+	require.NoError(t, json.Unmarshal(task.State.RequestSnapshot, &snapshot))
+	snapshot.Query = "请根据招标文件生成完整标书"
+	snapshot.Attachments = types.MessageAttachments{{ID: "tender-1", FileName: "招标文件.pdf", FileType: ".pdf", Content: tender, ContentMode: "full"}}
+	frozen, err := json.Marshal(snapshot)
+	require.NoError(t, err)
+	task.State.RequestSnapshot = frozen
+
+	generated := false
+	service.generate = func(ctx context.Context, req *types.QARequest, bus *event.EventBus) error {
+		generated = true
+		return bus.Emit(ctx, event.Event{Type: event.EventAgentComplete, Data: event.AgentCompleteData{FinalAnswer: "规划"}})
+	}
+	output, err := runner.Generate(t.Context(), task, bidgen.GenerationRequest{Phase: bidgen.PhasePlanning, Prompt: "规划"})
+	require.NoError(t, err)
+	require.False(t, generated, "the deterministic picker must not spend an LLM planning call")
+	require.True(t, types.HasUserInputRequest(output.Content))
+	require.Contains(t, output.Content, "共检测到 4 个包段")
+	require.Contains(t, output.Content, "第1包")
+	require.Contains(t, output.Content, "商务标与技术标分册编制")
+	require.Contains(t, output.Content, "仅技术标（暗标，正文不含供应商身份与报价）")
+	require.Len(t, store.messages, 1)
+
+	// A user reply naming the volume and lot settles the scope: no picker, the
+	// planning LLM runs directly.
+	task2 := &bidgen.Task{ID: "job-2", TenantID: 42, SessionID: "bid-session", UserID: "owner", Status: bidgen.StatusPlanning,
+		State: bidgen.State{Phase: bidgen.PhasePlanning, RequestSnapshot: frozen,
+			UserReplies: []bidgen.UserReply{{Text: "补充信息：生成范围：仅技术标（暗标）\n包段：第3包"}}}}
+	_, err = runner.Generate(t.Context(), task2, bidgen.GenerationRequest{Phase: bidgen.PhasePlanning, Prompt: "规划"})
+	require.NoError(t, err)
+	require.True(t, generated, "a scope-settled query goes straight to planning")
+}
+
+func TestBidGenerationScopePickerStaysSilentWithoutStructure(t *testing.T) {
+	runner, task, service, _ := bidRunnerFixture(t, types.AgentModeSmartReasoning)
+	var snapshot bidGenerationSnapshot
+	require.NoError(t, json.Unmarshal(task.State.RequestSnapshot, &snapshot))
+	snapshot.Query = "请根据招标文件生成完整标书"
+	snapshot.Attachments = types.MessageAttachments{{ID: "note-1", FileName: "说明.md", FileType: ".md", Content: "普通项目说明，无分册无包段。", ContentMode: "full"}}
+	frozen, err := json.Marshal(snapshot)
+	require.NoError(t, err)
+	task.State.RequestSnapshot = frozen
+
+	generated := false
+	service.generate = func(ctx context.Context, req *types.QARequest, bus *event.EventBus) error {
+		generated = true
+		return bus.Emit(ctx, event.Event{Type: event.EventAgentComplete, Data: event.AgentCompleteData{FinalAnswer: "规划"}})
+	}
+	_, err = runner.Generate(t.Context(), task, bidgen.GenerationRequest{Phase: bidgen.PhasePlanning, Prompt: "规划"})
+	require.NoError(t, err)
+	require.True(t, generated, "no detected structure: planning proceeds normally")
 }

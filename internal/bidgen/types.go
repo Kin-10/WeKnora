@@ -72,6 +72,7 @@ type State struct {
 	PendingInput     string          `json:"pending_input,omitempty"`
 	UserReplies      []UserReply     `json:"user_replies,omitempty"`
 	RetryCount       int             `json:"retry_count"`
+	ScopeMixResets   int             `json:"scope_mix_resets,omitempty"`
 	NoProgressCount  int             `json:"no_progress_count"`
 	TotalCalls       int             `json:"total_calls"`
 	RunStartCalls    int             `json:"run_start_calls"`

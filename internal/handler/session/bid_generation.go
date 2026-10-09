@@ -93,8 +93,6 @@ func (h *Handler) GetBidGeneration(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"success": true, "data": publicBidGeneration(task)})
 }
 
-// decodeBidRequestState accepts the same numeric workspace selector shape as
-// the input store, including historical string-valued workspace ids.
 func decodeBidRequestState(raw json.RawMessage, fallback *types.SessionLastRequestState) (*types.SessionLastRequestState, error) {
 	if len(raw) == 0 || string(raw) == "null" {
 		if fallback == nil {

@@ -168,11 +168,15 @@
                             <template v-if="bidGenerationInputMessage" #supplement>
                                 <ConversationInputCard v-for="request in inputRequestsFor(bidGenerationInputMessage)" :key="`${bidGenerationInputMessage.id}-${request.id}`"
                                     :request="request" :disabled="!canSubmitInputFor(bidGenerationInputMessage)"
-                                    :answered="messagesList.indexOf(bidGenerationInputMessage) < messagesList.length - 1"
+                                    :answered="bidGenerationCardAnswered(bidGenerationInputMessage)"
                                     @submit="(values) => handleConversationInputSubmit(bidGenerationInputMessage, request, values)" />
                                 <p v-if="bidGenerationInputMessage.answerFullyRendered && conversationInputProblem(bidGenerationInputMessage.content)" class="conversation-input-notice" role="status">
                                     {{ t('chat.conversationInput.incomplete') }}
                                 </p>
+                                <div v-if="canCancelBidGeneration" class="bid-card-actions">
+                                    <button type="button" class="bid-card-cancel" :disabled="bidGenerationControlsBlocked"
+                                        @click="handleBidGenerationControl('cancel')">{{ t('chat.bidGeneration.cancel') }}</button>
+                                </div>
                             </template>
                         </BidGenerationProgress>
                         <div v-if="showGlobalTypingIndicator" class="chat-global-wait" role="status"
@@ -397,6 +401,19 @@ const rewindLockSessionId = ref('')
 const bidGenerationTask = ref(null);
 const bidGenerationInputMessage = computed(() => !props.embeddedMode
     ? bidGenerationPendingInputMessage(bidGenerationTask.value, messagesList) : null);
+// A parallel drafting batch can land sibling section messages (assistant
+// role) after the pending card; only a later USER message means the card was
+// actually answered. Worker-written sections must not disable the card.
+function bidGenerationCardAnswered(message) {
+    const index = messagesList.indexOf(message);
+    return index >= 0 && messagesList.slice(index + 1).some(item => String(item?.role || '').toLowerCase() === 'user');
+}
+// The card itself must carry the cancel affordance: with long section lists
+// the panel's bottom action row scrolls away, leaving "确认并继续" as the
+// only visible control.
+const canCancelBidGeneration = computed(() =>
+    bidGenerationIsActive(bidGenerationTask.value) || bidGenerationTask.value?.status === 'failed');
+
 const bidGenerationRequestBusy = ref(false);
 const bidGenerationStartBusy = ref(false);
 const bidArtifactDownloading = ref(false);
@@ -642,6 +659,14 @@ const canSubmitInputFor = (message) => {
     const id = persistedAssistantId(message);
     const taskBlocksCard = bidGenerationIsWaiting(task) ? !bidGenerationAcceptsMessage(task, id)
         : ['paused', 'failed'].includes(task?.status) && task?.pending_message_id === id;
+    if (bidGenerationAcceptsMessage(task, id)) {
+        // The durable task checkpoint, not transcript order, gates the live bid
+        // card: a parallel drafting batch lands sibling section messages after
+        // the card, so "must be the last message" would permanently disable it.
+        return !taskBlocksCard && message.is_completed === true && message.answerFullyRendered
+            && !message.persistence_error && !message.steerForked
+            && !conversationInputInFlight.value && !continuationBlocked() && !Boolean(documentExportInFlight.value);
+    }
     return !taskBlocksCard && message.answerFullyRendered && canSubmitConversationInput(message, messagesList,
         conversationInputInFlight.value || continuationBlocked() || Boolean(documentExportInFlight.value));
 };
@@ -2529,6 +2554,7 @@ onBeforeRouteUpdate((to, from, next) => {
         line-height: 1.7;
     }
 
+
     .botanswer_laoding_gif {
         width: 24px;
         height: 18px;
@@ -2578,6 +2604,38 @@ onBeforeRouteUpdate((to, from, next) => {
 .sq-fade-leave-to {
     opacity: 0;
 }
+
+// Cancel rides with the bid card itself: long section lists scroll the
+// panel's bottom action row out of view, hiding every control but the card's
+// own 确认并继续.
+.bid-card-actions {
+    display: flex;
+    justify-content: flex-end;
+    margin-top: 8px;
+
+    .bid-card-cancel {
+        font: inherit;
+        font-size: 13px;
+        line-height: 1.5;
+        border: 1px solid var(--td-component-border, #d1d5db);
+        border-radius: 8px;
+        padding: 7px 12px;
+        background: var(--td-bg-color-container, #fff);
+        color: inherit;
+        cursor: pointer;
+
+        &:disabled {
+            opacity: .55;
+            cursor: not-allowed;
+        }
+
+        &:focus-visible {
+            outline: 2px solid var(--td-brand-color, #07a35a);
+            outline-offset: 2px;
+        }
+    }
+}
+
 </style>
 
 <style lang="less">
